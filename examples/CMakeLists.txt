@@ -10,7 +10,6 @@
 # CONTRIBUTING.md for details.
 
 list(APPEND ALL_EXE_SRCS
-  cas_point_contact.cpp
   ex0.cpp
   ex1.cpp
   ex2.cpp
