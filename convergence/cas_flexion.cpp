@@ -61,7 +61,7 @@ int iter = 0;
 	cout << "Combien de maillage : ";cin >> rep;
 	slope_ener.SetSize(rep-1,2); slope_l2.SetSize(rep-1,2);}
 
-string const err_energy("/home/al265942/Documents/mfem-next/examples/err_flexion_ordre2.txt");
+string const err_energy("err_flexion.txt");
     ofstream err_energy_flux(err_energy.c_str());
 
     if (err_energy_flux)    
@@ -270,8 +270,8 @@ if (ref1==0){
 
 // Compute error
 	double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
-	double pdc = Norm_Energie_Eaxct();
-	cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
+	//double pdc = Norm_Energie_Eaxct();
+	//cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
 	VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
 	double L2_error = x.ComputeL2Error(sol_exact_coef);
 	
@@ -303,9 +303,11 @@ if (ref1==1){
 if (ref1==0){
 	GridFunction ex(fespace);
 	ex.ProjectCoefficient(sol_exact_coef);
-	ex -= x;
+	GridFunction diff(fespace);
+	diff.ProjectCoefficient(sol_exact_coef);
+	diff -= x;
  
-	ParaViewDataCollection paraview_dc("Example2", mesh);
+	ParaViewDataCollection paraview_dc("Flexion", mesh);
 	paraview_dc.SetPrefixPath("ParaView");
 	paraview_dc.SetLevelsOfDetail(order);
 	paraview_dc.SetCycle(0);
@@ -313,7 +315,8 @@ if (ref1==0){
 	paraview_dc.SetHighOrderOutput(true);
 	paraview_dc.SetTime(0.0); // set the time
 	paraview_dc.RegisterField("numerical_solution",&x);
-	paraview_dc.RegisterField("diff-exact_solution",&ex);
+	paraview_dc.RegisterField("diff-exact_solution",&diff);
+	paraview_dc.RegisterField("exact_solution",&ex);
 	paraview_dc.Save();	
 }
 
@@ -495,20 +498,20 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 		Ch.Mult(strainh,stressh);	//approx
 		Ch.Mult(strain,stress);	//exacte
 
-		//strainh -= strain;
-		//stressh -= stress;
+		strainh -= strain;
+		stressh -= stress;
 
 		double pdc=0.0;
 		for (int k = 0; k< dim; k++)
-			pdc += strain(k)*stress(k);
+			pdc += strainh(k)*stressh(k);
 
 		for (int k = dim; k < dim*(dim+1)/2; k++)
-		  	pdc += 2*strain(k)*stress(k);
+		  	pdc += 2*strainh(k)*stressh(k);
 
 		  energy += w * pdc;
     }
 	}
-return (energy < 0.0) ? -sqrt(-energy) : sqrt(energy);
+return (energy < 0.0) ? sqrt(-energy) : sqrt(energy);
 }
 
 
