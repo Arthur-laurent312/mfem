@@ -184,7 +184,7 @@ if (ref1==0){
    //    corresponding to fespace. Initialize x with initial guess of zero,
    //    which satisfies the boundary conditions.
    GridFunction x(fespace);
-   VectorFunctionCoefficient Boundary_Dirichlet_coef(dim, Boundary_Dirichlet);
+   VectorFunctionCoefficient Boundary_Dirichlet_coef(dim, sol_exact);
    x = 0.0;
    // To use if there are different Dirichlet conditions.
    // Beware, the values of dirichlet boundary conditions are set here !
@@ -391,26 +391,6 @@ double F(const Vector &x)
 		force = 0.;}
 
 	return force;
-}
-
-// Boundary encastré
-void Boundary_Dirichlet(const Vector &x, Vector &u)
-{
-
-  double pull_force = -2.;
-  double L = 8.0;
-  double D =1.0;
-  double E = 1000.;
-  double nu = 0.25;
-  double I = D*D*D*D/12.;
-  double y = x(1)-D*0.5;
-
-  E=E/(1.-nu*nu); nu = nu/(1.-nu);
- //u(0) = -pull_force*y/(6.*E*I) * ((6.*L-3.*x(0))*x(0) + y*y*(2.+nu)- 1.5*D*D*(1.+nu));
- //u(1) = pull_force/(6.*E*I) * (3.*nu*y*y*(L-x(0)) + (3*L-x(0))*x(0)*x(0));
-
-	u(0) = -pull_force*y/(6.*E*I) * ((6.*L-3.*x(0))*x(0) + (2.+nu)*(y*y - D*D/4.));
-	u(1) = pull_force/(6.*E*I) * (3.*nu*y*y*(L-x(0)) + (3.*L-x(0))*x(0)*x(0)+ (4.+5.*nu)*D*D*x(0)/4.);
 }
 
 
