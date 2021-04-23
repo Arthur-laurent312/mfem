@@ -21,27 +21,17 @@ using namespace mfem;
 
 void sol_exact(const Vector &, Vector &);
 
-double F(const Vector &);
-
 double ComputeEnergyNorm(const FiniteElement &,
                          ElementTransformation &,
                          Vector &, Vector &);
 
 double ComputeNormeEnergy(const GridFunction &, Coefficient &, Coefficient &);
 
-void Boundary_Dirichlet(const Vector &, Vector &);
-
 double ComputeEnergyNorm(Mesh &, GridFunction &,
 						 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int, Coefficient &,
  					  Coefficient &, DenseMatrix &);
-
-
-void Grad(ElementTransformation &,const IntegrationPoint &,
- 		  const GridFunction &, DenseMatrix &);
-
-double Norm_Energie_Eaxct();
 
 int main(int argc, char *argv[])
 {
@@ -62,7 +52,7 @@ int iter = 0;
 	cout << "Combien de maillage : ";cin >> rep;
 	slope_ener.SetSize(rep-1,2); slope_l2.SetSize(rep-1,2);}
 
-string const err_energy("/home/al265942/Documents/mfem-next/examples/err_flexion_ordre2.txt");
+string const err_energy("err_contact.txt");
     ofstream err_energy_flux(err_energy.c_str());
 
     if (err_energy_flux)    
@@ -170,7 +160,7 @@ if (ref1==0){
    //    corresponding to fespace. Initialize x with initial guess of zero,
    //    which satisfies the boundary conditions.
    GridFunction x(fespace);
-   VectorFunctionCoefficient Boundary_Dirichlet_coef(dim, Boundary_Dirichlet);
+   VectorFunctionCoefficient Boundary_Dirichlet_coef(dim, sol_exact);
    x = 0.0;
    // To use if there are different Dirichlet conditions.
    // Beware, the values of dirichlet boundary conditions are set here !
@@ -339,7 +329,7 @@ return 0;
 // Definition of exact solution
 void sol_exact(const Vector &x, Vector &u)
 {
-  double P = 1.;
+  double P = 20.;
   double E = 1000.;
   double nu = 0.25;
   double r2 = x(1)*x(1)+x(0)*x(0);
@@ -369,25 +359,6 @@ void sol_exact(const Vector &x, Vector &u)
   cout << "uy= " << u(1) << endl;
 */
 }
-
-// Boundary sur tous les bords
-void Boundary_Dirichlet(const Vector &x, Vector &u)
-{
-  double P = 1.;
-  double E = 1000.;
-  double nu = 0.25;
-  double r2 = x(1)*x(1)+x(0)*x(0);
-  double pi = 3.14159265359;
-	//E=E/(1.-nu*nu); nu = nu/(1.-nu);
- double lambda;
-    lambda = E*nu/((1.+nu)*(1.-2.*nu));
-  double mu;
-	mu = E/(2.*(1.+nu));
-    u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
-//OLD	u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2+2*mu/(lambda+mu)*atan(x(1)/x(0)));
-	u(1) = -P/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - (lambda+2*mu)*log(r2)/(lambda+mu));
-}
-
 
 double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 						 Coefficient &lambdah, Coefficient &muh)
