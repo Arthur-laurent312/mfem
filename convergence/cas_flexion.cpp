@@ -20,33 +20,23 @@ using namespace std;
 using namespace mfem;
 
 void sol_exact(const Vector &, Vector &);
-
+void grad_exact(const Vector &, DenseMatrix &);
 double F(const Vector &);
 
-double ComputeEnergyNorm(const FiniteElement &,
-                         ElementTransformation &,
-                         Vector &, Vector &);
-
-double ComputeNormeEnergy(const GridFunction &, Coefficient &, Coefficient &);
-
-void Boundary_Dirichlet(const Vector &, Vector &);
+double ComputeGradNorm(Mesh &, GridFunction &);
 
 double ComputeEnergyNorm(Mesh &, GridFunction &,
 						 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int, Coefficient &, 					  Coefficient &, DenseMatrix &);
 
-
-void Grad(ElementTransformation &,const IntegrationPoint &,
- 		  const GridFunction &, DenseMatrix &);
-
 double Norm_Energie_Eaxct();
 
 int main(int argc, char *argv[])
 {
 int ref1;
-DenseMatrix slope_l2, slope_ener;
-double err_tmp_ener = 0., err_tmp_l2=0.;
+DenseMatrix slope_l2, slope_ener, slope_grad;
+double err_tmp_ener = 0., err_tmp_l2=0., err_tmp_grad=0.;
 double h_tmp = 0.;
 int iter = 0;
 
@@ -59,7 +49,7 @@ int iter = 0;
 	cout << "Pour plusieurs maillages tapez 1: ";  cin >> ref1;
 	if (ref1==1){
 	cout << "Combien de maillage : ";cin >> rep;
-	slope_ener.SetSize(rep-1,2); slope_l2.SetSize(rep-1,2);}
+	slope_ener.SetSize(rep-1,3); slope_l2.SetSize(rep-1,3), slope_grad.SetSize(rep-1,3);}
 
 string const err_energy("err_flexion.txt");
     ofstream err_energy_flux(err_energy.c_str());
@@ -270,13 +260,15 @@ if (ref1==0){
 
 // Compute error
 	double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
-	//double pdc = Norm_Energie_Eaxct();
+	double pdc = Norm_Energie_Eaxct();
+	double err_grad = ComputeGradNorm(*mesh, x);
 	//cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
 	VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
 	double L2_error = x.ComputeL2Error(sol_exact_coef);
 	
 	cout << "\nL2 norm of error: " << L2_error << endl;
 	cout << "Energy norm of error: " << ener_error << endl;
+	cout << "Grad norm of error: " << err_grad << endl;
 	cout << "numbers of elements: " << mesh->GetNE() <<endl;
 
 if (ref1==1){
@@ -284,18 +276,24 @@ if (ref1==1){
 	//Compute the slope
 	slope_l2(iter,0) = log(err_tmp_l2/L2_error) / log(h_tmp/h);
 	slope_l2(iter,1) = h;
+	slope_l2(iter,2) = L2_error;
 	err_tmp_l2 = L2_error;
 	//Compute the slope
 	slope_ener(iter,0) = log(err_tmp_ener/ener_error) / log(h_tmp/h);
 	slope_ener(iter,1) = h;
+	slope_ener(iter,2) = ener_error;
 	err_tmp_ener = ener_error;
+	//Compute the slope
+	slope_grad(iter,0) = log(err_tmp_grad/err_grad) / log(h_tmp/h);
+	slope_grad(iter,1) = h;
+	slope_grad(iter,2) = err_grad;
+	err_tmp_grad = err_grad;
 	h_tmp = h;
 
 	//Save in errors
 	//col1: elmentSize		  col2: L2 norm error	col3: ener norm error	
-	// col4: logelementSize	  col5: logL2Error		col6: log(enererror)
 	//col6: slope L2 error 	  col7: slope Ener error	col8: écart	
-	 err_energy_flux <<h<<" "<<L2_error<<" "<<ener_error <<" "<< log(h)<<" "<<log(L2_error)<<" "<<log(ener_error)<<" "<<slope_l2(iter,0)<<" "<<slope_ener(iter,0)<<" "<< pdc <<endl;
+	 err_energy_flux <<h<<" "<<L2_error<<" "<<ener_error <<" "<<err_grad<<" "<<slope_l2(iter,0)<<" "<<slope_ener(iter,0)<<" "<< pdc <<endl;
 	iter++;
 }
 
@@ -303,11 +301,9 @@ if (ref1==1){
 if (ref1==0){
 	GridFunction ex(fespace);
 	ex.ProjectCoefficient(sol_exact_coef);
-	GridFunction diff(fespace);
-	diff.ProjectCoefficient(sol_exact_coef);
-	diff -= x;
+	ex -= x;
  
-	ParaViewDataCollection paraview_dc("Flexion", mesh);
+	ParaViewDataCollection paraview_dc("Example2", mesh);
 	paraview_dc.SetPrefixPath("ParaView");
 	paraview_dc.SetLevelsOfDetail(order);
 	paraview_dc.SetCycle(0);
@@ -315,8 +311,7 @@ if (ref1==0){
 	paraview_dc.SetHighOrderOutput(true);
 	paraview_dc.SetTime(0.0); // set the time
 	paraview_dc.RegisterField("numerical_solution",&x);
-	paraview_dc.RegisterField("diff-exact_solution",&diff);
-	paraview_dc.RegisterField("exact_solution",&ex);
+	paraview_dc.RegisterField("diff-exact_solution",&ex);
 	paraview_dc.Save();	
 }
 
@@ -325,25 +320,16 @@ if (ref1==0){
 
 if (ref1==1){
 	cout<<endl;
-	cout<<"Pente de convergence avec normel2:"<<endl;
+	cout<<"Erreur en norme:"<<endl;
 	for (int i=1; i<iter; i++)
-			cout << "Pente: " << slope_l2(i,0) <<" Taille de maille= "<<slope_l2(i,1)<<endl;
+			cout << "L2: " << slope_l2(i,2)<<" Grad: "<<slope_grad(i,2) << " Energie: " << slope_ener(i,2)<<" Taille de maille= "<<slope_l2(i,1)<<endl;
 	cout<<endl;
-	cout<<"Pente de convergence avec norme energie:"<<endl;
+	cout<<"Pente de convergence:"<<endl;
 	for (int i=1; i<iter; i++)
-			cout << "Pente: " << slope_ener(i,0) <<" Taille de maille= "<<slope_ener(i,1)<<endl;
+			cout << "Pente L2: " << slope_l2(i,0)<<" Grad: "<<slope_grad(i,0) << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<slope_l2(i,1)<<endl;
+	cout<<endl;
 }
-/*
-   // 16. Free the used memory.
-   delete a;
-   delete b;
-   if (fec)
-   {
-      delete fespace;
-      delete fec;
-   }
-   delete mesh;
-*/
+
 }
     else
     {
@@ -369,14 +355,26 @@ E=E/(1.-nu*nu); nu = nu/(1.-nu);
 
 	u(0) = -pull_force*y/(6.*E*I) * ((6.*L-3.*x(0))*x(0) + (2.+nu)*(y*y - D*D/4.));
 	u(1) = pull_force/(6.*E*I) * (3.*nu*y*y*(L-x(0)) + (3.*L-x(0))*x(0)*x(0)+ (4.+5.*nu)*D*D*x(0)/4.);
-/*
-  cout<<endl;
-  cout << "x= " << x(0) << endl;
-  cout << "y= " << x(1) << endl;
-  cout << "ux= " << u(0) << endl;
-  cout << "uy= " << u(1) << endl;
-*/
 }
+void grad_exact(const Vector &x, DenseMatrix &grad)
+{
+	double pull_force = -2.;
+	double L = 8.0;
+	double D =1.0;
+	double E = 1000.;
+	double nu = 0.25;
+	double I = D*D*D/12.;
+	double y = x(1)-D*0.5;
+
+	E=E/(1.-nu*nu); nu = nu/(1.-nu);
+
+	grad(0,0) = -y*(-3*x(0) + 6*L-3*x(0));
+	grad(0,1) = -((6*L-3*x(0))*x(0) + (2+nu)*(y*y-D*D/4) - 2*y*y*(2+nu));
+	grad(1,1) = 6*nu*y*(L-x(0));
+	grad(1,0) = (2*x(0)*(3*L-x(0))-x(0)*x(0)-3*nu*y*y);
+	grad *= pull_force/(6.*E*I);
+}
+
 // load at the end of the beam  
 double F(const Vector &x)
 {
@@ -393,6 +391,73 @@ double F(const Vector &x)
 	return force;
 }
 
+
+double ComputeGradNorm(Mesh &mesh, GridFunction &x){
+	FiniteElementSpace *fes = x.FESpace();
+	int dim = fes->GetMesh()->SpaceDimension();
+
+	MatrixFunctionCoefficient grad_exact_coef (dim, grad_exact);
+ 
+	ElementTransformation *Trans;
+	Array<int> vdofs;
+	DenseMatrix grad, gradh;
+	L2_FECollection flux_fec(fes->GetOrder(1), dim);
+	FiniteElementSpace flux_fes(&mesh, &flux_fec, dim);
+	double error = 0.0;
+	Array<int> udofs;
+	Vector ul;
+	for (int i = 0; i < fes->GetNE() ; i++)
+	{
+		const FiniteElement *fe = fes->GetFE(i);
+		const FiniteElement *flux_fe = flux_fes.GetFE(i);
+		const int order = 2*fe->GetOrder()+3;   //<----------
+		const IntegrationRule *ir = &(IntRules.Get(fe->GetGeomType(), order));
+		Trans = fes->GetElementTransformation(i);
+		const int dof = fe->GetDof();
+		const int dim = fe->GetDim();
+		const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+
+		DenseMatrix dshape(dof, dim);
+		DenseMatrix gh(dim, dim),gradh (dim, dim),grad(dim,dim);
+		fes->GetElementVDofs(i, udofs);
+	DenseMatrix loc_data(dof, dim);
+	for (int s=0 ; s<dim ; s++)
+	{
+		Array<int> udofs_tmp(dof);
+		udofs_tmp = 0.;
+		for(int j=0 ; j<dof ; j++){
+			udofs_tmp[j] = udofs[j+dof*s];}
+
+		Vector loc_data_tmp;
+		x.GetSubVector(udofs_tmp, loc_data_tmp);
+
+		for (int j=0 ; j<dof ; j++)
+		loc_data(j,s) = loc_data_tmp(j);
+	}
+   		//DenseMatrix loc_data_mat(ul.GetData(), dof, dim);
+	for (int j = 0; j < ir->GetNPoints(); j++)
+	{
+		const IntegrationPoint &ip = ir->IntPoint(j);
+		Trans->SetIntPoint(&ip);
+		double w = Trans->Weight() * ip.weight;
+		fe->CalcDShape(ip, dshape);
+		MultAtB(loc_data, dshape, gh);
+
+		Mult(gh, Trans->InverseJacobian(), gradh);
+		grad_exact_coef.Eval(grad,*Trans,ip);
+/*
+	cout<<endl;
+	cout<<grad(0,0)<<" "<<gradh(0,0)<<endl;
+	cout<<grad(1,1)<<" "<<gradh(1,1)<<endl;
+	cout<<grad(0,1)<<" "<<gradh(0,1)<<endl;
+	cout<<grad(1,0)<<" "<<gradh(1,0)<<endl;
+*/
+		grad -= gradh;
+		error += w * pow(grad(0,0)*grad(0,0) + grad(1,1)*grad(1,1) + grad(0,1)*grad(0,1) + grad(1,0)*grad(1,0),0.5);
+	}			
+	}
+return (error < 0.0) ? -sqrt(-error) : sqrt(error);
+}
 
 double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 						 Coefficient &lambdah, Coefficient &muh)
@@ -457,9 +522,9 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 		Vector stressh(tdim), strainh(tdim);	//approché
 		Vector stress(tdim), strain(tdim);	//exacte
 		DenseMatrix C,Ch;
-	for (int i = 0; i < ir->GetNPoints(); i++)
+	for (int j = 0; j < ir->GetNPoints(); j++)
     {
-		const IntegrationPoint &ip = ir->IntPoint(i);
+		const IntegrationPoint &ip = ir->IntPoint(j);
 		Trans->SetIntPoint(&ip);
 		double w = Trans->Weight() * ip.weight;
 
@@ -476,7 +541,7 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 
 		C.Invert();	Ch.Invert();
 		Ch.Mult(strainh,stressh);	//approx
-		Ch.Mult(strain,stress);	//exacte
+		C.Mult(strain,stress);	//exacte
 
 		strainh -= strain;
 		stressh -= stress;
@@ -491,7 +556,7 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 		  energy += w * pdc;
     }
 	}
-return (energy < 0.0) ? sqrt(-energy) : sqrt(energy);
+return (energy < 0.0) ? -sqrt(-energy) : sqrt(energy);
 }
 
 
