@@ -368,13 +368,11 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
 
 	E=E/(1.-nu*nu); nu = nu/(1.-nu);
 
-	grad(0,0) = -y*(-3*x(0) + 6*L-3*x(0));
-	grad(0,1) = -((6*L-3*x(0))*x(0) + (2+nu)*(y*y-D*D/4) - 2*y*y*(2+nu));
-	grad(1,1) = 6*nu*y*(L-x(0));
-	grad(1,0) = (2*x(0)*(3*L-x(0))-x(0)*x(0)-3*nu*y*y);
-	grad *= pull_force/(6.*E*I);
+	grad(0,0) = -pull_force*y/(E*I)*(L-x(0));
+	grad(0,1) = -pull_force/(6.*E*I)*((6*L-3*x(0))*x(0) + (2+nu)*(y*y-D*D/4) + 2*y*y*(2+nu));
+	grad(1,1) = pull_force*y*nu/(E*I)*(L-x(0));
+	grad(1,0) = pull_force/(6.*E*I)*(2*x(0)*(3*L-x(0))-x(0)*x(0)-3*nu*y*y+(4+5*nu)*D*D/4);
 }
-
 // load at the end of the beam  
 double F(const Vector &x)
 {
@@ -410,7 +408,7 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
 	{
 		const FiniteElement *fe = fes->GetFE(i);
 		const FiniteElement *flux_fe = flux_fes.GetFE(i);
-		const int order = 2*fe->GetOrder()+3;   //<----------
+		const int order = 2*fe->GetOrder() + 3;   //<----------
 		const IntegrationRule *ir = &(IntRules.Get(fe->GetGeomType(), order));
 		Trans = fes->GetElementTransformation(i);
 		const int dof = fe->GetDof();
@@ -421,6 +419,7 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
 		DenseMatrix gh(dim, dim),gradh (dim, dim),grad(dim,dim);
 		fes->GetElementVDofs(i, udofs);
 	DenseMatrix loc_data(dof, dim);
+
 	for (int s=0 ; s<dim ; s++)
 	{
 		Array<int> udofs_tmp(dof);
@@ -434,24 +433,27 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
 		for (int j=0 ; j<dof ; j++)
 		loc_data(j,s) = loc_data_tmp(j);
 	}
+
    		//DenseMatrix loc_data_mat(ul.GetData(), dof, dim);
 	for (int j = 0; j < ir->GetNPoints(); j++)
 	{
+	cout<<endl;
+	cout<<endl;
+	cout<<"Intergration poin: "<<j<<" element: "<<i<<endl;
 		const IntegrationPoint &ip = ir->IntPoint(j);
 		Trans->SetIntPoint(&ip);
 		double w = Trans->Weight() * ip.weight;
 		fe->CalcDShape(ip, dshape);
 		MultAtB(loc_data, dshape, gh);
-
 		Mult(gh, Trans->InverseJacobian(), gradh);
 		grad_exact_coef.Eval(grad,*Trans,ip);
-/*
 	cout<<endl;
-	cout<<grad(0,0)<<" "<<gradh(0,0)<<endl;
-	cout<<grad(1,1)<<" "<<gradh(1,1)<<endl;
-	cout<<grad(0,1)<<" "<<gradh(0,1)<<endl;
-	cout<<grad(1,0)<<" "<<gradh(1,0)<<endl;
-*/
+	cout<<"Coord x,y: "<<ip.x<<" "<<ip.y<<endl;
+	cout<<grad(0,0)<<" "<<gradh(0,0)<<" écart entre les composantes "<<grad(0,0) - gradh(0,0)<<endl;
+	cout<<grad(1,1)<<" "<<gradh(1,1)<<" écart entre les composantes "<<grad(1,1) - gradh(1,1)<<endl;
+	cout<<grad(0,1)<<" "<<gradh(0,1)<<" écart entre les composantes "<<grad(0,1) - gradh(0,1)<<endl;
+	cout<<grad(1,0)<<" "<<gradh(1,0)<<" écart entre les composantes "<<grad(1,0) - gradh(1,0)<<endl;
+
 		grad -= gradh;
 		error += w * pow(grad(0,0)*grad(0,0) + grad(1,1)*grad(1,1) + grad(0,1)*grad(0,1) + grad(1,0)*grad(1,0),0.5);
 	}			
