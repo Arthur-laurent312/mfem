@@ -21,67 +21,65 @@ using namespace mfem;
 
 void sol_exact(const Vector &, Vector &);
 
-double ComputeEnergyNorm(const FiniteElement &,
-                         ElementTransformation &,
-                         Vector &, Vector &);
-
-double ComputeNormeEnergy(const GridFunction &, Coefficient &, Coefficient &);
-
 double ComputeEnergyNorm(Mesh &, GridFunction &,
 						 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int, Coefficient &,
  					  Coefficient &, DenseMatrix &);
 
+
+void Grad(ElementTransformation &,const IntegrationPoint &,
+ 		  const GridFunction &, DenseMatrix &);
+
 int main(int argc, char *argv[])
 {
-int ref1;
-DenseMatrix slope_l2, slope_ener;
-double err_tmp_ener = 0., err_tmp_l2=0.;
-double h_tmp = 0.;
-int iter = 0;
+	//Variables pour l'affichage
+	int ref1;
+	DenseMatrix slope_l2, slope_ener;
+	double err_tmp_ener = 0., err_tmp_l2=0.;
+	double h_tmp = 0.;
+	int iter = 0;
+   
+	const char *mesh_file = "../data/carre.msh";
+	bool static_cond = false;
+	int rep=5;
 
-   // 1. Parse command-line options.
-   const char *mesh_file = "../data/carre.msh";
-   int order = 1;
-   bool static_cond = false;
-   int rep=5;
-
+	int order;
+	cout << "Ordre de la méthode: ";  cin >> order;
 	cout << "Pour plusieurs maillages tapez 1: ";  cin >> ref1;
 	if (ref1==1){
 	cout << "Combien de maillage : ";cin >> rep;
-	slope_ener.SetSize(rep-1,2); slope_l2.SetSize(rep-1,2);}
+	slope_ener.SetSize(rep-1,3); slope_l2.SetSize(rep-1,3);}
 
-string const err_energy("err_contact.txt");
+	string const err_energy("err_contact.txt");		//Fichier avec les erreurs
     ofstream err_energy_flux(err_energy.c_str());
-
     if (err_energy_flux)    
     {
-
+//Boucle pour maillage plus fin
 for (int ref_levels=1; ref_levels<((rep-2)*ref1+2); ref_levels++){ 
 
 if (ref1==0){
 	cout << "Combien de rafinement uniforme : "; cin >> ref_levels;}
 
-   OptionsParser args(argc, argv);
-   args.AddOption(&mesh_file, "-m", "--mesh",
+	// Parse command-line options.
+	OptionsParser args(argc, argv);
+	args.AddOption(&mesh_file, "-m", "--mesh",
                   "Mesh file to use.");
-   args.AddOption(&order, "-o", "--order",
+	args.AddOption(&order, "-o", "--order",
                   "Finite element order (polynomial degree).");
-   args.AddOption(&static_cond, "-sc", "--static-condensation", "-no-sc",
+	args.AddOption(&static_cond, "-sc", "--static-condensation", "-no-sc",
                   "--no-static-condensation", "Enable static condensation.");
-   args.Parse();
-   if (!args.Good())
-   {
-      args.PrintUsage(cout);
-      return 1;
-   }
-   args.PrintOptions(cout);
+	args.Parse();
+	if (!args.Good())
+	{
+	  args.PrintUsage(cout);
+	  return 1;
+	}
+	args.PrintOptions(cout);
 
-   // 2. Read the mesh from the given mesh file. We can handle triangular,
-   //    quadrilateral, tetrahedral or hexahedral elements with the same code.
-   Mesh *mesh = new Mesh(mesh_file, 1, 1);
-   int dim = mesh->Dimension();
+	//Lecture du malliage
+	Mesh *mesh = new Mesh(mesh_file, 1, 1);
+	int dim = mesh->Dimension();
 
    // 3. Select the order of the finite element discretization space. For NURBS
    //    meshes, we increase the order by degree elevation.
@@ -132,8 +130,7 @@ if (ref1==0){
   // List of True DoFs : Define (here) Dirichlet conditions
   Array<int> ess_tdof_list;
   Array<int> ess_bdr(mesh->bdr_attributes.Max());
-  ess_bdr = 1;
- // ess_bdr[0] = 0;
+  ess_bdr = 1;		//On sélectionne tous les bords
   fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
 
    // 7. Set up the linear form b(.) which corresponds to the right-hand side of
@@ -152,7 +149,6 @@ if (ref1==0){
    }
 
    LinearForm *b = new LinearForm(fespace);
- //  b->AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(f));
    cout << "r.h.s. ... " << flush;
 
 
@@ -164,41 +160,31 @@ if (ref1==0){
    x = 0.0;
    // To use if there are different Dirichlet conditions.
    // Beware, the values of dirichlet boundary conditions are set here !
-   x.ProjectBdrCoefficient(Boundary_Dirichlet_coef, ess_bdr);
-		// save déplacement dans un fichier .txt
-   {
-      GridFunction *nodes = mesh->GetNodes();
-//   *nodes += x;
-      ofstream sol_ofs("sol.txt");
-      sol_ofs.precision(20);
-      x.Save(sol_ofs);
-   }
+   //Projète solution exacte sur les bords
+   x.ProjectBdrCoefficient(Boundary_Dirichlet_coef, ess_bdr);	
+
    // 9. Set up the bilinear form a(.,.) on the finite element space
    //    corresponding to the linear elasticity integrator with piece-wise
    //    constants coefficient lambda and mu.
 
-   double lambda;
-  double E = 1000.;
-  double nu = 0.25;
-//E=E/(1-nu*nu); nu = nu/(1-nu);
 
+	double E = 1000.;
+	double nu = 0.25;
+	double lambda;
 	lambda = E*nu/((1.+nu)*(1.-2.*nu));
-
-   double mu;
-   mu = E/(2.*(1.+nu));
-   ConstantCoefficient mu_func(mu);
+	double mu;
+	mu = E/(2.*(1.+nu));
+	ConstantCoefficient mu_func(mu);
 //lambda = 2*lambda*mu/(lambda+2*mu);
-   ConstantCoefficient lambda_func(lambda);
-   BilinearForm *a = new BilinearForm(fespace);
-  BilinearFormIntegrator *integ = new ElasticityIntegrator(lambda_func, mu_func);
-  a->AddDomainIntegrator(integ);
+	ConstantCoefficient lambda_func(lambda);
+	BilinearForm *a = new BilinearForm(fespace);
+	BilinearFormIntegrator *integ = new ElasticityIntegrator(lambda_func, mu_func);
+	a->AddDomainIntegrator(integ);
 
    // 10. Assemble the bilinear form and the corresponding linear system,
    //     applying any necessary transformations such as: eliminating boundary
    //     conditions, applying conforming constraints for non-conforming AMR,
    //     static condensation, etc.
-
-
    cout << "matrix ... " << flush;
 
    a->Assemble();
@@ -211,14 +197,13 @@ if (ref1==0){
    cout << "done." << endl;
 
    cout << "Size of linear system: " << A.Height() << endl;
-   a->RecoverFEMSolution(X, *b, x);
 
-
-#ifndef MFEM_USE_SUITESPARSE
+//#ifndef MFEM_USE_SUITESPARSE
    // 11. Define a simple symmetric Gauss-Seidel preconditioner and use it to
    //     solve the system Ax=b with PCG.
    GSSmoother M(A);
-   PCG(A, M, B, X, 1, 500, 1e-15, 0.0);
+   PCG(A, M, B, X, 1, 5000, 1e-11, 0.0);
+/*
 #else
    // 11. If MFEM was compiled with SuiteSparse, use UMFPACK to solve the system.
    UMFPackSolver umf_solver;
@@ -226,7 +211,7 @@ if (ref1==0){
    umf_solver.SetOperator(A);
    umf_solver.Mult(B, X);
 #endif
-
+*/
    // 12. Recover the solution as a finite element grid function.
    a->RecoverFEMSolution(X, *b, x);
 
@@ -244,7 +229,7 @@ if (ref1==0){
    }
 
 
-// Compute error
+// Compute errors
 	double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
 	VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
 	double L2_error = x.ComputeL2Error(sol_exact_coef);
@@ -258,10 +243,12 @@ if (ref1==1){
 	//Compute the slope
 	slope_l2(iter,0) = log(err_tmp_l2/L2_error) / log(h_tmp/h);
 	slope_l2(iter,1) = h;
+	slope_l2(iter,2) = L2_error;
 	err_tmp_l2 = L2_error;
 	//Compute the slope
 	slope_ener(iter,0) = log(err_tmp_ener/ener_error) / log(h_tmp/h);
 	slope_ener(iter,1) = h;
+	slope_ener(iter,2) = ener_error;
 	err_tmp_ener = ener_error;
 	h_tmp = h;
 
@@ -271,6 +258,14 @@ if (ref1==1){
 	//col6: slope L2 error 	  col7: slope Ener error	col8: écart	
 	 err_energy_flux <<h<<" "<<L2_error<<" "<<ener_error <<" "<< log(h)<<" "<<log(L2_error)<<" "<<log(ener_error)<<" "<<slope_l2(iter,0)<<" "<<slope_ener(iter,0)<<endl;
 	iter++;
+   //  Free the used memory.
+   delete a;
+   delete b;
+   if (fec)
+   {
+      delete fec;
+   }
+   delete mesh;
 }
 
 //Save in Praview format
@@ -297,27 +292,19 @@ if (ref1==0){
 //end loop mesh
 }
 
+//Affichage
 if (ref1==1){
 	cout<<endl;
-	cout<<"Pente de convergence avec normel2:"<<endl;
+	cout<<"Erreur en norme:"<<endl;
 	for (int i=1; i<iter; i++)
-			cout << "Pente: " << slope_l2(i,0) <<" Taille de maille= "<<slope_l2(i,1)<<endl;
+			cout << "L2: " << slope_l2(i,2) << " Energie: " << slope_ener(i,2)<<" Taille de maille= "<<slope_l2(i,1)<<endl;
 	cout<<endl;
-	cout<<"Pente de convergence avec norme energie:"<<endl;
+	cout<<"Pente de convergence:"<<endl;
 	for (int i=1; i<iter; i++)
-			cout << "Pente: " << slope_ener(i,0) <<" Taille de maille= "<<slope_ener(i,1)<<endl;
+			cout << "Pente L2: " << slope_l2(i,0) << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<slope_l2(i,1)<<endl;
+	cout<<endl;
 }
-/*
-   // 16. Free the used memory.
-   delete a;
-   delete b;
-   if (fec)
-   {
-      delete fespace;
-      delete fec;
-   }
-   delete mesh;
-*/
+
 }
     else
     {
@@ -326,40 +313,23 @@ if (ref1==1){
 return 0;
 }
 
-// Definition of exact solution
+//===================== Solution exacte =====================
 void sol_exact(const Vector &x, Vector &u)
 {
-  double P = 20.;
+  double P = 2.;
   double E = 1000.;
   double nu = 0.25;
   double r2 = x(1)*x(1)+x(0)*x(0);
-  double pi = 3.14159265359;
-	//E=E/(1.-nu*nu); nu = nu/(1.-nu);
- double lambda;
+  double pi = M_PI;
+	double lambda;
     lambda = E*nu/((1.+nu)*(1.-2.*nu));
-  double mu;
-	const double feps = 1e-5;
+	double mu;
 	mu = E/(2.*(1.+nu));
-//	if (fabs(x(0)) < feps) {
-//	  if (fabs(x(1)) < feps) {
-//  	    u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*0);
-//      } else {
-//        u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*pi);
-//      }
-//    } else {
-	  u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
-// 	}
-//OLD u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan(x(1)/x(0)));
+	u(0) = -P/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
 	u(1) = -P/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - (lambda+2*mu)*log(r2)/(lambda+mu));
-/*
-  cout<<endl;
-  cout << "x= " << x(0) << endl;
-  cout << "y= " << x(1) << endl;
-  cout << "ux= " << u(0) << endl;
-  cout << "uy= " << u(1) << endl;
-*/
 }
 
+//===================== Erreur Norme Energie =====================
 double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 						 Coefficient &lambdah, Coefficient &muh)
 {
@@ -371,7 +341,7 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
   
 	double E = 1000.;
 	double nu = 0.25;
-	E=E/(1.-nu*nu); nu = nu/(1.-nu);
+	//E=E/(1.-nu*nu); nu = nu/(1.-nu);
 	double lambda_d;
 	lambda_d = E*nu/((1.+nu)*(1.-2.*nu));
 	ConstantCoefficient lambda(lambda_d);

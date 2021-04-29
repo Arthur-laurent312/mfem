@@ -1,18 +1,6 @@
-//
-// Compile with: make e2_boucle
-//
-// Sample runs:  ex2 -m ../data/beam-tri.mesh
-//               ex2 -m ../data/beam-quad.mesh
-//               ex2 -m ../data/beam-tet.mesh
-//               ex2 -m ../data/beam-hex.mesh
-//               ex2 -m ../data/beam-wedge.mesh
-//               ex2 -m ../data/beam-quad.mesh -o 3 -sc
-//               ex2 -m ../data/beam-quad-nurbs.mesh
-//               ex2 -m ../data/beam-hex-nurbs.mesh
-//
-//			Problème élastique a plusieurs chargements
+//Cas test d'une poutre en flexion avec solution analytique.
+//Calculs avec plusieurs maillage possible
 
-#include "mfem.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -42,10 +30,10 @@ int iter = 0;
 
    // 1. Parse command-line options.
    const char *mesh_file = "../data/beam-quad.mesh";
-   int order = 1;
+   int order;
    bool static_cond = false;
    int rep=5;
-
+	cout << "Ordre de la méthode: ";  cin >> order;
 	cout << "Pour plusieurs maillages tapez 1: ";  cin >> ref1;
 	if (ref1==1){
 	cout << "Combien de maillage : ";cin >> rep;
@@ -187,7 +175,6 @@ if (ref1==0){
    double lambda;
   double E = 1000.;
   double nu = 0.25;
-//E=E/(1-nu*nu); nu = nu/(1-nu);
 
 	lambda = E*nu/((1.+nu)*(1.-2.*nu));
 
@@ -219,20 +206,14 @@ if (ref1==0){
 
    cout << "Size of linear system: " << A.Height() << endl;
    a->RecoverFEMSolution(X, *b, x);
-		// save déplacement dans un fichier .txt
-   {
-      GridFunction *nodes = mesh->GetNodes();
-//   *nodes += x;
-      ofstream sol_ofs("sol.txt");
-      sol_ofs.precision(20);
-      x.Save(sol_ofs);
-   }
 
-#ifndef MFEM_USE_SUITESPARSE
+
+//#ifndef MFEM_USE_SUITESPARSE
    // 11. Define a simple symmetric Gauss-Seidel preconditioner and use it to
    //     solve the system Ax=b with PCG.
    GSSmoother M(A);
    PCG(A, M, B, X, 1, 50000, 1e-25, 0.0);
+/*
 #else
    // 11. If MFEM was compiled with SuiteSparse, use UMFPACK to solve the system.
    UMFPackSolver umf_solver;
@@ -240,7 +221,7 @@ if (ref1==0){
    umf_solver.SetOperator(A);
    umf_solver.Mult(B, X);
 #endif
-
+*/
    // 12. Recover the solution as a finite element grid function.
    a->RecoverFEMSolution(X, *b, x);
 
@@ -301,9 +282,11 @@ if (ref1==1){
 if (ref1==0){
 	GridFunction ex(fespace);
 	ex.ProjectCoefficient(sol_exact_coef);
-	ex -= x;
+	GridFunction diff(fespace);
+	diff.ProjectCoefficient(sol_exact_coef);
+	diff -= x;
  
-	ParaViewDataCollection paraview_dc("Example2", mesh);
+	ParaViewDataCollection paraview_dc("Flexion", mesh);
 	paraview_dc.SetPrefixPath("ParaView");
 	paraview_dc.SetLevelsOfDetail(order);
 	paraview_dc.SetCycle(0);
@@ -311,7 +294,8 @@ if (ref1==0){
 	paraview_dc.SetHighOrderOutput(true);
 	paraview_dc.SetTime(0.0); // set the time
 	paraview_dc.RegisterField("numerical_solution",&x);
-	paraview_dc.RegisterField("diff-exact_solution",&ex);
+	paraview_dc.RegisterField("diff-exact_solution",&diff);
+	paraview_dc.RegisterField("exact_solution",&ex);
 	paraview_dc.Save();	
 }
 
@@ -341,7 +325,7 @@ return 0;
 // Definition of exact solution
 void sol_exact(const Vector &x, Vector &u)
 {
-  double pull_force = -2.;
+  double pull_force = -1.;
   double L = 8.0;
   double D =1.0;
   double E = 1000.;
@@ -358,7 +342,7 @@ E=E/(1.-nu*nu); nu = nu/(1.-nu);
 }
 void grad_exact(const Vector &x, DenseMatrix &grad)
 {
-	double pull_force = -2.;
+	double pull_force = -1;
 	double L = 8.0;
 	double D =1.0;
 	double E = 1000.;
@@ -376,7 +360,7 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
 // load at the end of the beam  
 double F(const Vector &x)
 {
-  double pull_force = -2.;
+  double pull_force = -1.;
   double L = 8.0;
   double D =1.0;
 	double I = D*D*D*D/12.;
@@ -437,9 +421,6 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
    		//DenseMatrix loc_data_mat(ul.GetData(), dof, dim);
 	for (int j = 0; j < ir->GetNPoints(); j++)
 	{
-	cout<<endl;
-	cout<<endl;
-	cout<<"Intergration poin: "<<j<<" element: "<<i<<endl;
 		const IntegrationPoint &ip = ir->IntPoint(j);
 		Trans->SetIntPoint(&ip);
 		double w = Trans->Weight() * ip.weight;
@@ -447,15 +428,19 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
 		MultAtB(loc_data, dshape, gh);
 		Mult(gh, Trans->InverseJacobian(), gradh);
 		grad_exact_coef.Eval(grad,*Trans,ip);
+/*
+	cout<<endl;
+	cout<<endl;
+	cout<<"Intergration poin: "<<j<<" element: "<<i<<endl;
 	cout<<endl;
 	cout<<"Coord x,y: "<<ip.x<<" "<<ip.y<<endl;
 	cout<<grad(0,0)<<" "<<gradh(0,0)<<" écart entre les composantes "<<grad(0,0) - gradh(0,0)<<endl;
 	cout<<grad(1,1)<<" "<<gradh(1,1)<<" écart entre les composantes "<<grad(1,1) - gradh(1,1)<<endl;
 	cout<<grad(0,1)<<" "<<gradh(0,1)<<" écart entre les composantes "<<grad(0,1) - gradh(0,1)<<endl;
 	cout<<grad(1,0)<<" "<<gradh(1,0)<<" écart entre les composantes "<<grad(1,0) - gradh(1,0)<<endl;
-
+*/
 		grad -= gradh;
-		error += w * pow(grad(0,0)*grad(0,0) + grad(1,1)*grad(1,1) + grad(0,1)*grad(0,1) + grad(1,0)*grad(1,0),0.5);
+		error += w * grad(0,0)*grad(0,0) + grad(1,1)*grad(1,1) + grad(0,1)*grad(0,1) + grad(1,0)*grad(1,0);
 	}			
 	}
 return (error < 0.0) ? -sqrt(-error) : sqrt(error);
