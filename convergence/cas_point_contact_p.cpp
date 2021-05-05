@@ -32,8 +32,8 @@ int main(int argc, char *argv[])
    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
    
 	// Parse command-line options.
-	int order=1;
-	const char *mesh_file = "../data/carre.msh";
+	int order=2;
+	const char *mesh_file = "carre.msh";
 	bool static_cond = false;
 	bool amg_elast = 0;
 	bool reorder_space = false;
