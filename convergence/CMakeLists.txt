@@ -5,7 +5,6 @@ list(APPEND ALL_EXE_SRCS
   )
 
 
-
 # Include the source directory where mfem.hpp and mfem-performance.hpp are.
 include_directories(BEFORE ${PROJECT_BINARY_DIR})
 

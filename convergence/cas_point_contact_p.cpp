@@ -21,7 +21,7 @@ static constexpr double mu = E/(2.*(1.+nu));	//coef de Lamé
 
 void sol_exact(const Vector &, Vector &);
 
-double ComputeEnergyNorm( GridFunction &,
+double ComputeEnergyNorm(ParGridFunction &,
 			 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int, Coefficient &,
@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
    
   // Parse command-line options.
-  int order=1;
+  int order=2;
   const char *mesh_file = "carre.msh";
   bool static_cond = false;
   bool amg_elast = 0;
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
   args.AddOption(&solver, "-sol", "--Itératif", "-Direct",
 		 "--Solver Itératif", "Solver direct.");
 
-  int ref_levels = 10;
+  int ref_levels = 6;
 
   args.Parse();
   if (!args.Good())
@@ -228,6 +228,8 @@ int main(int argc, char *argv[])
     pcg->SetPrintLevel(2);
     pcg->SetPreconditioner(*amg);
     pcg->Mult(B, X);
+    delete pcg;
+    delete amg;
   }
   else{
     cout<<"Solver direct non implémenté"<<endl;
@@ -254,19 +256,15 @@ int main(int argc, char *argv[])
   double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
   VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
   double L2_error = x.ComputeL2Error(sol_exact_coef);
-  double h = pmesh->GetElementSize(0);
+  double h = pmesh->GetElementSize(0);  
   if (myid == 0)
     {
-      cout<<endl;
-      cout<<"Erreur en Norme L2: "<<L2_error<<endl;
-      cout<<"Erreur en Norme Énergie: "<<ener_error<<endl;
-      cout<<"Taille de maille: "<<h<<endl;
+      cout << "\nL2 norm of error: " << L2_error << endl;
+      cout << "Energy norm of error: " << ener_error << endl;
+      cout<<"Taille de maille: "<<h<<endl;    
       cout << "numbers of elements: " << pmesh->GetNE() <<endl;
     }
   //  Free the used memory.
-
-  //delete pcg;
-  //delete amg;
   delete a;
   delete b;
   if (fec)
