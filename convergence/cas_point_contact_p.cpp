@@ -331,12 +331,10 @@ double ComputeEnergyNorm(ParGridFunction &x,
   ElementTransformation *Trans;
   Array<int> vdofs;
 
-  // compute sigma(ex) and sigma(x)
-  // then compute ||sigma(ex) - sigma(x)||
   ParFiniteElementSpace *ufes = ex.ParFESpace();
   ParFiniteElementSpace *uhfes = x.ParFESpace();
   Vector sigma, sigma_h;
-  double energy = 0.0;
+  double energy_local = 0.0, energy_global = 0.0;
   for (int i = 0; i < ufes->GetNE() ; i++)
     {
       const FiniteElement *fe = ufes->GetFE(i);
@@ -397,10 +395,12 @@ double ComputeEnergyNorm(ParGridFunction &x,
 	  for (int k = dim; k < dim*(dim+1)/2; k++)
 	    pdc += 2*strainh(k)*stressh(k);
 
-	  energy += w * pdc;
+	  energy_local += w * pdc;
 	}
     }
-  return (energy < 0.0) ? -sqrt(-energy) : sqrt(energy);
+	MPI_Reduce(&energy_local, &energy_global, 1, MPI_FLOAT, MPI_SUM, 0,
+           MPI_COMM_WORLD);
+  return (energy < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
 }
 
 
