@@ -6,16 +6,18 @@
 
 //Ref: http://e6.ijs.si/medusa/wiki/index.php/Point_contact
 
-
 #include "mfem.hpp"
 #include <fstream>
 #include <iostream>
 
 using namespace std;
 using namespace mfem;
-static double Force = -1.;
-static double E = 1000.;
-static double nu = 0.25;
+
+static constexpr double Force = -1.;
+static constexpr double E = 1000.;	//Module de young
+static constexpr double nu = 0.25;	//Coef de poisson
+static constexpr double lambda = E*nu/((1.+nu)*(1.-2.*nu));
+static constexpr double mu = E/(2.*(1.+nu));	//coef de Lamé
 
 void sol_exact(const Vector &, Vector &);
 
@@ -81,13 +83,6 @@ int main(int argc, char *argv[])
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
   int dim = mesh->Dimension();
 
-  //  Select the order of the finite element discretization space. For NURBS
-  //    meshes, we increase the order by degree elevation.
-  if (mesh->NURBSext)
-    {
-      mesh->DegreeElevate(order, order);
-    }
-
   //  refine the mesh to increase the resolution. In this example we do
   //    'ref_levels' of uniform refinement. We choose 'ref_levels' to be the
   //    largest number that gives a final mesh with no more than 5,000
@@ -101,14 +96,13 @@ int main(int argc, char *argv[])
 
   //Define parallel mesh by a partitioning of the serial mesh.
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
-  {
+/*
     int par_ref_levels = 1;
     for (int l = 0; l < par_ref_levels; l++)
       {
 	pmesh->UniformRefinement();
       }
-  }
-
+*/
   //  Define a finite element space on the mesh. Here we use vector finite
   //    elements, i.e. dim copies of a scalar finite element space. The vector
   //    dimension is specified by the last argument of the FiniteElementSpace
@@ -190,10 +184,6 @@ int main(int argc, char *argv[])
   //    corresponding to the linear elasticity integrator with piece-wise
   //    constants coefficient lambda and mu.
 
-  double lambda;
-  lambda = E*nu/((1.+nu)*(1.-2.*nu));
-  double mu;
-  mu = E/(2.*(1.+nu));
   ConstantCoefficient mu_func(mu);
   ConstantCoefficient lambda_func(lambda);
 
@@ -238,6 +228,8 @@ int main(int argc, char *argv[])
     pcg->SetPrintLevel(2);
     pcg->SetPreconditioner(*amg);
     pcg->Mult(B, X);
+    delete pcg;
+    delete amg;
   }
   else{
     cout<<"Solver direct non implémenté"<<endl;
@@ -273,8 +265,6 @@ int main(int argc, char *argv[])
       cout << "numbers of elements: " << pmesh->GetNE() <<endl;
     }
   //  Free the used memory.
-  // delete pcg;
-  //delete amg;
   delete a;
   delete b;
   if (fec)
@@ -283,12 +273,13 @@ int main(int argc, char *argv[])
     }
   delete mesh;
   delete pmesh;
+
   MPI_Finalize();
   /*
   //Save in Praview format
   if (ref1==0){
-  GridFunction diff(fespace);
-  GridFunction ex1(fespace);
+  ParGridFunction diff(fespace);
+  ParGridFunction ex1(fespace);
   diff.ProjectCoefficient(sol_exact_coef);
   ex1.ProjectCoefficient(sol_exact_coef);
   diff-= x;
@@ -367,7 +358,6 @@ double ComputeEnergyNorm(ParGridFunction &x,
       const int dim = fe->GetDim();
       const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
 
-      // View of the 'flux' vector as a (dof x tdim) matrix
       DenseMatrix flux_mat(sigma.GetData(), dof, tdim);
       DenseMatrix flux_math(sigma_h.GetData(), dof, tdim);
 
@@ -392,7 +382,7 @@ double ComputeEnergyNorm(ParGridFunction &x,
 	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
 	  Ch.Invert();
 	  Ch.Mult(strainh,stressh);	//approx
-	  
+	  Ch.Invert();
 	  Ch.Mult(strain,stress);	//exacte
 
 	  strainh -= strain;

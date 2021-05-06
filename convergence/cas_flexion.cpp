@@ -39,9 +39,9 @@ void grad_exact(const Vector &, DenseMatrix &);
 double F(const Vector &);
 
 //Erreur en norme H1
-double ComputeGradNorm(Mesh &, GridFunction &);
+double ComputeGradNorm(GridFunction &);
 //Erreur en norme energy
-double ComputeEnergyNorm(Mesh &, GridFunction &,
+double ComputeEnergyNorm(GridFunction &,
 			 Coefficient &, Coefficient &);
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int,
 		  Coefficient &, Coefficient &, DenseMatrix &);
@@ -203,9 +203,9 @@ int main(int argc, char *argv[])
       a->RecoverFEMSolution(X, *b, x);
 
       // Compute error
-      double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
+      double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
       double pdc = Norm_Energie_Exact();
-      double err_grad = ComputeGradNorm(*mesh, x);
+      double err_grad = ComputeGradNorm(x);
       //cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
       double L2_error = x.ComputeL2Error(sol_exact_coef);
@@ -325,7 +325,7 @@ double F(const Vector &x)
 }
 
 //===================== Erreur en norme H1 =====================
-double ComputeGradNorm(Mesh &mesh, GridFunction &x){
+double ComputeGradNorm(GridFunction &x){
   FiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
 
@@ -394,7 +394,7 @@ double ComputeGradNorm(Mesh &mesh, GridFunction &x){
 }
 
 //==============Erreur en Norme energie ===================
-double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
+double ComputeEnergyNorm(GridFunction &x,
 			 Coefficient &lambdah, Coefficient &muh)
 {
   FiniteElementSpace *fes = x.FESpace();

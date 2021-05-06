@@ -20,7 +20,7 @@ static constexpr double mu = E/(2.*(1.+nu));	//coef de Lamé
 
 void sol_exact(const Vector &, Vector &);
 
-double ComputeEnergyNorm(Mesh &, GridFunction &,
+double ComputeEnergyNorm(GridFunction &,
 			 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, 
@@ -39,9 +39,9 @@ int main(int argc, char *argv[])
 
   // Parse command-line options.
   const char *mesh_file = "carre.msh";
-  int order=2;
+  int order=1;
   bool static_cond = false;
-  int rep=10;
+  int rep=9;
   bool iterative=true;
 
   OptionsParser args(argc, argv);
@@ -180,7 +180,7 @@ int main(int argc, char *argv[])
 
 
       // Compute errors
-      double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
+      double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
       double L2_error = x.ComputeL2Error(sol_exact_coef);
       cout<<"Erreur en Norme L2: "<<L2_error<<endl;
@@ -268,7 +268,7 @@ void sol_exact(const Vector &x, Vector &u)
 }
 
 //===================== Erreur Norme Energie =====================
-double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
+double ComputeEnergyNorm(GridFunction &x,
 			 Coefficient &lambdah, Coefficient &muh)
 {
   FiniteElementSpace *fes = x.FESpace();
