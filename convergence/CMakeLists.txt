@@ -2,8 +2,7 @@ list(APPEND ALL_EXE_SRCS
   cas_point_contact_p.cpp
   cas_point_contact.cpp
   cas_flexion.cpp
-  cas_point_contact_p.cpp 
- )
+  )
 
 
 # Include the source directory where mfem.hpp and mfem-performance.hpp are.
