@@ -6,7 +6,6 @@
 
 //Ref: http://e6.ijs.si/medusa/wiki/index.php/Point_contact
 
-
 #include "mfem.hpp"
 #include <fstream>
 #include <iostream>
@@ -83,7 +82,7 @@ int main(int argc, char *argv[])
   //Lecture du malliage
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
   int dim = mesh->Dimension();
-__LINE__;
+
   //  refine the mesh to increase the resolution. In this example we do
   //    'ref_levels' of uniform refinement. We choose 'ref_levels' to be the
   //    largest number that gives a final mesh with no more than 5,000
@@ -281,8 +280,8 @@ __LINE__;
   /*
   //Save in Praview format
   if (ref1==0){
-  GridFunction diff(fespace);
-  GridFunction ex1(fespace);
+  ParGridFunction diff(fespace);
+  ParGridFunction ex1(fespace);
   diff.ProjectCoefficient(sol_exact_coef);
   ex1.ProjectCoefficient(sol_exact_coef);
   diff-= x;
@@ -321,7 +320,7 @@ void sol_exact(const Vector &x, Vector &u)
 double ComputeEnergyNorm(ParGridFunction &x,
 			 Coefficient &lambdah, Coefficient &muh)
 {
-  ParFiniteElementSpace *fes = x.FESpace();
+  ParFiniteElementSpace *fes = x.ParFESpace();
   int dim = fes->GetMesh()->SpaceDimension();
   VectorFunctionCoefficient sol_exact_coef (dim, sol_exact);
   ParGridFunction ex(fes);
@@ -385,6 +384,7 @@ double ComputeEnergyNorm(ParGridFunction &x,
 	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
 	  Ch.Invert();
 	  Ch.Mult(strainh,stressh);	//approx
+	  Ch.Invert();
 	  Ch.Mult(strain,stress);	//exacte
 
 	  strainh -= strain;
