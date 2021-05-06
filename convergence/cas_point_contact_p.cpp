@@ -13,13 +13,16 @@
 
 using namespace std;
 using namespace mfem;
-static double Force = -1.;
-static double E = 1000.;
-static double nu = 0.25;
+
+static constexpr double Force = -1.;
+static constexpr double E = 1000.;	//Module de young
+static constexpr double nu = 0.25;	//Coef de poisson
+static constexpr double lambda = E*nu/((1.+nu)*(1.-2.*nu));
+static constexpr double mu = E/(2.*(1.+nu));	//coef de Lamé
 
 void sol_exact(const Vector &, Vector &);
 
-double ComputeEnergyNorm(Mesh &, GridFunction &,
+double ComputeEnergyNorm( GridFunction &,
 			 Coefficient &, Coefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int, Coefficient &,
@@ -60,8 +63,7 @@ int main(int argc, char *argv[])
   args.AddOption(&solver, "-sol", "--Itératif", "-Direct",
 		 "--Solver Itératif", "Solver direct.");
 
-  int ref_levels = 9;
-  //cout << "Combien de rafinement uniforme : "; cin >> ref_levels;
+  int ref_levels = 10;
 
   args.Parse();
   if (!args.Good())
@@ -81,14 +83,7 @@ int main(int argc, char *argv[])
   //Lecture du malliage
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
   int dim = mesh->Dimension();
-
-  //  Select the order of the finite element discretization space. For NURBS
-  //    meshes, we increase the order by degree elevation.
-  if (mesh->NURBSext)
-    {
-      mesh->DegreeElevate(order, order);
-    }
-
+__LINE__;
   //  refine the mesh to increase the resolution. In this example we do
   //    'ref_levels' of uniform refinement. We choose 'ref_levels' to be the
   //    largest number that gives a final mesh with no more than 5,000
@@ -102,14 +97,13 @@ int main(int argc, char *argv[])
 
   //Define parallel mesh by a partitioning of the serial mesh.
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
-  {
+/*
     int par_ref_levels = 1;
     for (int l = 0; l < par_ref_levels; l++)
       {
 	pmesh->UniformRefinement();
       }
-  }
-
+*/
   //  Define a finite element space on the mesh. Here we use vector finite
   //    elements, i.e. dim copies of a scalar finite element space. The vector
   //    dimension is specified by the last argument of the FiniteElementSpace
@@ -191,10 +185,6 @@ int main(int argc, char *argv[])
   //    corresponding to the linear elasticity integrator with piece-wise
   //    constants coefficient lambda and mu.
 
-  double lambda;
-  lambda = E*nu/((1.+nu)*(1.-2.*nu));
-  double mu;
-  mu = E/(2.*(1.+nu));
   ConstantCoefficient mu_func(mu);
   ConstantCoefficient lambda_func(lambda);
 
@@ -241,7 +231,7 @@ int main(int argc, char *argv[])
     pcg->Mult(B, X);
   }
   else{
-    cout<<"Solver direct non implémenté<"endl;
+    cout<<"Solver direct non implémenté"<<endl;
   }   
 
 
@@ -262,18 +252,22 @@ int main(int argc, char *argv[])
     }
 
   // Compute errors
-  //double ener_error = ComputeEnergyNorm(*mesh, x, lambda_func, mu_func);
+  double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
   VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
   double L2_error = x.ComputeL2Error(sol_exact_coef);
+  double h = pmesh->GetElementSize(0);
   if (myid == 0)
     {
-      cout << "\nL2 norm of error: " << L2_error << endl;
-      //cout << "Energy norm of error: " << ener_error << endl;
+      cout<<endl;
+      cout<<"Erreur en Norme L2: "<<L2_error<<endl;
+      cout<<"Erreur en Norme Énergie: "<<ener_error<<endl;
+      cout<<"Taille de maille: "<<h<<endl;
       cout << "numbers of elements: " << pmesh->GetNE() <<endl;
     }
   //  Free the used memory.
-  delete pcg;
-  delete amg;
+
+  //delete pcg;
+  //delete amg;
   delete a;
   delete b;
   if (fec)
@@ -282,6 +276,7 @@ int main(int argc, char *argv[])
     }
   delete mesh;
   delete pmesh;
+
   MPI_Finalize();
   /*
   //Save in Praview format
@@ -323,13 +318,13 @@ void sol_exact(const Vector &x, Vector &u)
 }
 
 //===================== Erreur Norme Energie =====================
-double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
+double ComputeEnergyNorm(ParGridFunction &x,
 			 Coefficient &lambdah, Coefficient &muh)
 {
-  FiniteElementSpace *fes = x.FESpace();
+  ParFiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
   VectorFunctionCoefficient sol_exact_coef (dim, sol_exact);
-  GridFunction ex(fes);
+  ParGridFunction ex(fes);
   ex.ProjectCoefficient(sol_exact_coef);
   
   BilinearFormIntegrator *integh = new ElasticityIntegrator(lambdah, muh);
@@ -339,11 +334,9 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
 
   // compute sigma(ex) and sigma(x)
   // then compute ||sigma(ex) - sigma(x)||
-  FiniteElementSpace *ufes = ex.FESpace();
-  FiniteElementSpace *uhfes = x.FESpace();
+  ParFiniteElementSpace *ufes = ex.ParFESpace();
+  ParFiniteElementSpace *uhfes = x.ParFESpace();
   Vector sigma, sigma_h;
-  L2_FECollection flux_fec(fes->GetOrder(1), dim);
-  FiniteElementSpace flux_fes(&mesh, &flux_fec, dim);
   double energy = 0.0;
   for (int i = 0; i < ufes->GetNE() ; i++)
     {
@@ -356,19 +349,18 @@ double ComputeEnergyNorm(Mesh &mesh, GridFunction &x,
       ufes->GetElementVDofs(i, vdofs);
       ex.GetSubVector(vdofs, u);
       Trans = ufes->GetElementTransformation(i);
-      integ->ComputeElementFlux(*ufes->GetFE(i), *Trans, u, *flux_fes.GetFE(i), sigma);
+      integh->ComputeElementFlux(*ufes->GetFE(i), *Trans, u, *fes->GetFE(i), sigma);
 
       // compute sigma(x)
       uhfes->GetElementVDofs(i, vdofs);
       x.GetSubVector(vdofs, uh);
       Trans = uhfes->GetElementTransformation(i);
-      integh->ComputeElementFlux(*uhfes->GetFE(i), *Trans, uh, *flux_fes.GetFE(i), sigma_h);
+      integh->ComputeElementFlux(*uhfes->GetFE(i), *Trans, uh, *fes->GetFE(i), sigma_h);
 		
       const int dof = fe->GetDof();
       const int dim = fe->GetDim();
       const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
 
-      // View of the 'flux' vector as a (dof x tdim) matrix
       DenseMatrix flux_mat(sigma.GetData(), dof, tdim);
       DenseMatrix flux_math(sigma_h.GetData(), dof, tdim);
 
