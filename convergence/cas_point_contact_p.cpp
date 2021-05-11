@@ -46,6 +46,7 @@ int main(int argc, char *argv[])
   bool amg_elast = 0;
   bool reorder_space = false;
   bool solver=true;
+  int ref_levels = 8;
   OptionsParser args(argc, argv);
   args.AddOption(&mesh_file, "-m", "--mesh",
 		 "Mesh file to use.");
@@ -60,10 +61,9 @@ int main(int argc, char *argv[])
   args.AddOption(&reorder_space, "-nodes", "--by-nodes", "-vdim", "--by-vdim",
 		 "Use byNODES ordering of vector space instead of byVDIM");
   args.AddOption(&solver, "-sol", "--Itératif", "-Direct",
-		 "--Solver Itératif", "Solver direct.");
-
-  int ref_levels = 6;
-
+       		 "--Solver Itératif", "Solver direct.");
+  args.AddOption(&ref_levels, "-ref", "--Num_ref", "Nombre de rafinement de maillage");
+ 
   args.Parse();
   if (!args.Good())
     {
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
 	amg->SetSystemsOptions(dim, reorder_space);
       }
     HyprePCG *pcg = new HyprePCG(A);
-    pcg->SetTol(1e-15);
+    pcg->SetTol(1e-20);
     pcg->SetMaxIter(5000);
     pcg->SetPrintLevel(2);
     pcg->SetPreconditioner(*amg);
@@ -396,9 +396,9 @@ double ComputeEnergyNorm(ParGridFunction &x,
 	  energy_local += w * pdc;
 	}
     }
-	MPI_Reduce(&energy_local, &energy_global, 1, MPI_FLOAT, MPI_SUM, 0,
+	MPI_Reduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM, 0,
            MPI_COMM_WORLD);
-  return (energy < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
+  return (energy_global < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
 }
 
 
