@@ -1,544 +1,515 @@
-// COMPILE WITH: MAKE CAS_POINT_CONTACT
+// compile with: make cas_point_contact
 //
-//CAS TEST AVEC SOLUTION ANALYTIQUE. PLAQUE 2D AVEC POINT DE CONTACT EN (0,0).
-//CALCUL DE LA DÉFORMATION EN ÉLASTICITÉ LINÉAIRE. 
-//VERSION PARALLÈLE
+//cas test avec solution analytique. plaque 2d avec point de contact en (0,0).
+//calcul de la déformation en élasticité linéaire. 
+//version parallèle
 
-//REF: HTTP://E6.IJS.SI/MEDUSA/WIKI/INDEX.PHP/POINT_CONTACT
+//ref: http://e6.ijs.si/medusa/wiki/index.php/point_contact
 
-#INCLUDE "MFEM.HPP"
-#INCLUDE <FSTREAM>
-#INCLUDE <IOSTREAM>
+#include "mfem.hpp"
+#include <fstream>
+#include <iostream>
 
-USING NAMESPACE STD;
-USING NAMESPACE MFEM;
+using namespace std;
+using namespace mfem;
 
-STATIC CONSTEXPR DOUBLE FORCE = -1.;
-STATIC CONSTEXPR DOUBLE E = 1000.;	//MODULE DE YOUNG
-STATIC CONSTEXPR DOUBLE NU = 0.25;	//COEF DE POISSON
-STATIC CONSTEXPR DOUBLE LAMBDA = E*NU/((1.+NU)*(1.-2.*NU));
-STATIC CONSTEXPR DOUBLE MU = E/(2.*(1.+NU));	//COEF DE LAMÉ
+static constexpr double force = -1.;
+static constexpr double e = 1000.;	//module de young
+static constexpr double nu = 0.25;	//coef de poisson
+static constexpr double lambda = e*nu/((1.+nu)*(1.-2.*nu));
+static constexpr double mu = e/(2.*(1.+nu));	//coef de lamé
 
-VOID SOL_EXACT(CONST VECTOR &, VECTOR &);
-DOUBLE UX_EXACT(CONST VECTOR &);
-DOUBLE UY_EXACT(CONST VECTOR &);
-VOID GRAD_EXACT(CONST VECTOR &, DENSEMATRIX &);
-VOID GRADEXACT_X(CONST VECTOR &, VECTOR &);
-VOID GRADEXACT_Y(CONST VECTOR &, VECTOR &);
+void sol_exact(const Vector &, Vector &);
+double ux_exact(const Vector &);
+double uy_exact(const Vector &);
+void grad_exact(const Vector &, DenseMatrix &);
+void gradexact_x(const Vector &, Vector &);
+void gradexact_y(const Vector &, Vector &);
 
-DOUBLE COMPUTEENERGYNORM(GRIDFUNCTION &,
-			 COEFFICIENT &, COEFFICIENT &);
+double computeenergynorm(ParGridFunction &,
+			 Coefficient &, Coefficient &);
 
-VOID ELASTICY_MAT(ELEMENTTRANSFORMATION &,CONST INTEGRATIONPOINT &, 
-		  INT, COEFFICIENT &, COEFFICIENT &, DENSEMATRIX &);
+void elasticy_mat(ElementTransformation &,const IntegrationPoint &, 
+		  int, Coefficient &, Coefficient &, DenseMatrix &);
 
-DOUBLE COMPUTEH1NORM(GRIDFUNCTION &);
+double computeh1norm(ParGridFunction &);
 
-VOID COMPUTESTRESS(ELEMENTTRANSFORMATION &,CONST INTEGRATIONPOINT &,
-		   GRIDFUNCTION &, INT,  VECTOR &);
+void computestress(ElementTransformation &,const IntegrationPoint &,
+		   ParGridFunction &, int,  Vector &);
 
-INT MAIN(INT ARGC, CHAR *ARGV[])
+int main(int argc, char *argv[])
 {
 
-//   // INITIALIZE MPI.
-//   INT NUM_PROCS, MYID;
-//   MPI_INIT(&ARGC, &ARGV);
-//   MPI_COMM_SIZE(MPI_COMM_WORLD, &NUM_PROCS);
-//   MPI_COMM_RANK(MPI_COMM_WORLD, &MYID);
-//   // PARSE COMMAND-LINE OPTIONS.
-//   INT ORDER=2;
-//   CONST CHAR *MESH_FILE = "CARRE.MSH";
-//   BOOL STATIC_COND = FALSE;
-//   BOOL AMG_ELAST = 0;
-//   BOOL REORDER_SPACE = FALSE;
-//   BOOL SOLVER=TRUE;
-//   INT REF_LEVELS = 8;
-//   OPTIONSPARSER ARGS(ARGC, ARGV);
-//   ARGS.ADDOPTION(&MESH_FILE, "-M", "--MESH",
-// 		 "MESH FILE TO USE.");
-//   ARGS.ADDOPTION(&ORDER, "-O", "--ORDER",
-// 		 "FINITE ELEMENT ORDER (POLYNOMIAL DEGREE).");
-//   ARGS.ADDOPTION(&AMG_ELAST, "-ELAST", "--AMG-FOR-ELASTICITY", "-SYS",
-// 		 "--AMG-FOR-SYSTEMS",
-// 		 "USE THE SPECIAL AMG ELASTICITY SOLVER (GM/LN APPROACHES), "
-// 		 "OR STANDARD AMG FOR SYSTEMS (UNKNOWN APPROACH).");
-//   ARGS.ADDOPTION(&STATIC_COND, "-SC", "--STATIC-CONDENSATION", "-NO-SC",
-// 		 "--NO-STATIC-CONDENSATION", "ENABLE STATIC CONDENSATION.");
-//   ARGS.ADDOPTION(&REORDER_SPACE, "-NODES", "--BY-NODES", "-VDIM", "--BY-VDIM",
-// 		 "USE BYNODES ORDERING OF VECTOR SPACE INSTEAD OF BYVDIM");
-//   ARGS.ADDOPTION(&SOLVER, "-SOL", "--ITÉRATIF", "-DIRECT",
-//        		 "--SOLVER ITÉRATIF", "SOLVER DIRECT.");
-//   ARGS.ADDOPTION(&REF_LEVELS, "-REF", "--NUM_REF", "NOMBRE DE RAFINEMENT DE MAILLAGE");
+  // initialize mpi.
+  int num_procs, myid;
+  MPI_Init(&argc, &argv);
+  MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &myid);
+  // parse command-line Options.
+  int order=2;
+  const char *mesh_file = "carre.msh";
+  bool static_cond = false;
+  bool amg_elast = 0;
+  bool reorder_space = false;
+  bool solver=true;
+  int ref_levels = 8;
+  OptionsParser args(argc, argv);
+  args.AddOption(&mesh_file, "-m", "--mesh",
+ 		 "mesh file to use.");
+  args.AddOption(&order, "-o", "--order",
+ 		 "finite element order (polynomial degree).");
+  args.AddOption(&amg_elast, "-elast", "--amg-for-Elasticity", "-sys",
+ 		 "--amg-for-systems",
+ 		 "use the special amg Elasticity solver (gm/ln approaches), "
+ 		 "or standard amg for systems (unknown approach).");
+  args.AddOption(&static_cond, "-sc", "--static-condensation", "-no-sc",
+ 		 "--no-static-condensation", "enable static condensation.");
+  args.AddOption(&reorder_space, "-nodes", "--by-nodes", "-vdim", "--by-vdim",
+ 		 "use bynodes ordering of Vector space instead of byvdim");
+  args.AddOption(&solver, "-sol", "--itératif", "-direct",
+		 "--solver itératif", "solver direct.");
+  args.AddOption(&ref_levels, "-ref", "--num_ref", "nombre de rafinement de maillage");
 
-//   ARGS.PARSE();
-//   IF (!ARGS.GOOD())
-//     {
-//       IF (MYID == 0)
-// 	{
-// 	  ARGS.PRINTUSAGE(COUT);
-// 	}
-//       MPI_FINALIZE();
-//       RETURN 1;
-//     }
-//   IF (MYID == 0)
-//     {
-//       ARGS.PRINTOPTIONS(COUT);
-//     }
+  args.Parse();
+  if (!args.Good())
+    {
+      if (myid == 0)
+ 	{
+ 	  args.PrintUsage(cout);
+ 	}
+      MPI_Finalize();
+      return 1;
+    }
+  if (myid == 0)
+    {
+      args.PrintOptions(cout);
+    }
+  //lecture du malliage
+  Mesh *mesh = new Mesh(mesh_file, 1, 1);
+  int dim = mesh->Dimension();
+  //  refine the mesh to increase the resolution. in this example we do
+  //    'ref_levels' of uniform refinement. we choose 'ref_levels' to be the
+  //    largest number that gives a final mesh with no more than 5,000
+  //    elements.
+  //   int ref_levels = (int)floor(log(5000./mesh->Getne())/log(2.)/dim);
+  for (int l = 0; l < ref_levels; l++)
+    {
+      mesh->UniformRefinement();
+    }
+  //define parallel mesh by a partitioning of the serial mesh.
+  ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
+  /*
+    int par_ref_levels = 1;
+    for (int l = 0; l < par_ref_levels; l++)
+    {
+    pmesh->uniformrefinement();
+    }
+  */
+  //  define a finite element space on the mesh. here we use Vector finite
+  //    elements, i.e. dim copies of a scalar finite element space. the Vector
+  //    dimension is specified by the last argument of the ParFiniteElementSpace
+  //    constructor. for nurbs meshes, we use the (degree elevated) nurbs space
+  //    associated with the mesh nodes.
+  FiniteElementCollection *fec;
+  ParFiniteElementSpace *fespace;
+  const bool use_nodal_fespace = pmesh->NURBSext && !amg_elast;
+  if (use_nodal_fespace)
+    {
+      fec = NULL;
+      fespace = (ParFiniteElementSpace *)pmesh->GetNodes()->FESpace();
+    }
+  else
+    {
+      fec = new H1_FECollection(order, dim);
+      if (reorder_space)
+ 	{
+ 	  fespace = new ParFiniteElementSpace(pmesh, fec, dim, Ordering::byVDIM);
+ 	}
+      else
+ 	{
+ 	  fespace = new ParFiniteElementSpace(pmesh, fec, dim,  Ordering::byVDIM);
+ 	}
+    }
+  HYPRE_Int Size = fespace->GlobalTrueVSize();
+  if (myid == 0)
+    {
+      cout << "number of finite element unknowns: " << Size << endl
+	   << "assembling: " << flush;
+    }
+  // determine the list of true (i.e. conforming) essential boundary dofs.
+  //    in this example, the boundary coGlobalTrueVSizenditions are defined by marking only
+  //    boundary attribute 1 from the mesh as essential and converting it to a
+  //    list of true dofs.
 
-//   //LECTURE DU MALLIAGE
-//   MESH *MESH = NEW MESH(MESH_FILE, 1, 1);
-//   INT DIM = MESH->DIMENSION();
+  // list of true dofs : define (here) dirichlet conditions
+  Array<int> ess_tdof_list;
+  Array<int> ess_bdr(pmesh->bdr_attributes.Max());
+  ess_bdr = 1;		//on sélectionne tous les bords
+  fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
+  // Set up the linear form b(.) which corresponds to the right-hand side of
+  //    the fem linear system. in this case, b_i equals the boundary integral
+  //    of f*phi_i where f represents a "pull down" force on the neumann part
+  //    of the boundary and phi_i are the basis Functions in the finite element
+  //    fespace. the force is defined by the VectorArrayCoefficient object f,
+  //    which is a Vector of Coefficient objects. the fact that f is non-zero
+  //    on boundary attribute 2 is indicated by the use of piece-wise Constants
+  //    Coefficient for its last component.
+  VectorArrayCoefficient f(dim);
+  for (int i = 0; i < dim-1; i++)
+    {
+      f.Set(i, new ConstantCoefficient(0.0));
+    }
+  ParLinearForm *b = new ParLinearForm(fespace);
+  b->Assemble();
+  if (myid == 0)
+    {
+      cout << "r.h.s. ... " << flush;
+    }
 
-//   //  REFINE THE MESH TO INCREASE THE RESOLUTION. IN THIS EXAMPLE WE DO
-//   //    'REF_LEVELS' OF UNIFORM REFINEMENT. WE CHOOSE 'REF_LEVELS' TO BE THE
-//   //    LARGEST NUMBER THAT GIVES A FINAL MESH WITH NO MORE THAN 5,000
-//   //    ELEMENTS.
-//   //   INT REF_LEVELS = (INT)FLOOR(LOG(5000./MESH->GETNE())/LOG(2.)/DIM);
-
-//   FOR (INT L = 0; L < REF_LEVELS; L++)
-//     {
-//       MESH->UNIFORMREFINEMENT();
-//     }
-
-//   //DEFINE PARALLEL MESH BY A PARTITIONING OF THE SERIAL MESH.
-//   PARMESH *PMESH = NEW PARMESH(MPI_COMM_WORLD, *MESH);
-//   /*
-//     INT PAR_REF_LEVELS = 1;
-//     FOR (INT L = 0; L < PAR_REF_LEVELS; L++)
-//     {
-//     PMESH->UNIFORMREFINEMENT();
-//     }
-//   */
-//   //  DEFINE A FINITE ELEMENT SPACE ON THE MESH. HERE WE USE VECTOR FINITE
-//   //    ELEMENTS, I.E. DIM COPIES OF A SCALAR FINITE ELEMENT SPACE. THE VECTOR
-//   //    DIMENSION IS SPECIFIED BY THE LAST ARGUMENT OF THE FINITEELEMENTSPACE
-//   //    CONSTRUCTOR. FOR NURBS MESHES, WE USE THE (DEGREE ELEVATED) NURBS SPACE
-//   //    ASSOCIATED WITH THE MESH NODES.
-//   FINITEELEMENTCOLLECTION *FEC;
-//   PARFINITEELEMENTSPACE *FESPACE;
-//   CONST BOOL USE_NODAL_FESPACE = PMESH->NURBSEXT && !AMG_ELAST;
-//   IF (USE_NODAL_FESPACE)
-//     {
-//       FEC = NULL;
-//       FESPACE = (PARFINITEELEMENTSPACE *)PMESH->GETNODES()->FESPACE();
-//     }
-//   ELSE
-//     {
-//       FEC = NEW H1_FECOLLECTION(ORDER, DIM);
-//       IF (REORDER_SPACE)
-// 	{
-// 	  FESPACE = NEW PARFINITEELEMENTSPACE(PMESH, FEC, DIM, ORDERING::BYNODES);
-// 	}
-//       ELSE
-// 	{
-// 	  FESPACE = NEW PARFINITEELEMENTSPACE(PMESH, FEC, DIM, ORDERING::BYVDIM);
-// 	}
-//     }
-//   HYPRE_INT SIZE = FESPACE->GLOBALTRUEVSIZE();
-//   IF (MYID == 0)
-//     {
-//       COUT << "NUMBER OF FINITE ELEMENT UNKNOWNS: " << SIZE << ENDL
-//            << "ASSEMBLING: " << FLUSH;
-//     }
-
-//   // DETERMINE THE LIST OF TRUE (I.E. CONFORMING) ESSENTIAL BOUNDARY DOFS.
-//   //    IN THIS EXAMPLE, THE BOUNDARY CONDITIONS ARE DEFINED BY MARKING ONLY
-//   //    BOUNDARY ATTRIBUTE 1 FROM THE MESH AS ESSENTIAL AND CONVERTING IT TO A
-//   //    LIST OF TRUE DOFS.
-
-
-//   // LIST OF TRUE DOFS : DEFINE (HERE) DIRICHLET CONDITIONS
-//   ARRAY<INT> ESS_TDOF_LIST;
-//   ARRAY<INT> ESS_BDR(PMESH->BDR_ATTRIBUTES.MAX());
-//   ESS_BDR = 1;		//ON SÉLECTIONNE TOUS LES BORDS
-//   FESPACE->GETESSENTIALTRUEDOFS(ESS_BDR, ESS_TDOF_LIST);
-
-//   // SET UP THE LINEAR FORM B(.) WHICH CORRESPONDS TO THE RIGHT-HAND SIDE OF
-//   //    THE FEM LINEAR SYSTEM. IN THIS CASE, B_I EQUALS THE BOUNDARY INTEGRAL
-//   //    OF F*PHI_I WHERE F REPRESENTS A "PULL DOWN" FORCE ON THE NEUMANN PART
-//   //    OF THE BOUNDARY AND PHI_I ARE THE BASIS FUNCTIONS IN THE FINITE ELEMENT
-//   //    FESPACE. THE FORCE IS DEFINED BY THE VECTORARRAYCOEFFICIENT OBJECT F,
-//   //    WHICH IS A VECTOR OF COEFFICIENT OBJECTS. THE FACT THAT F IS NON-ZERO
-//   //    ON BOUNDARY ATTRIBUTE 2 IS INDICATED BY THE USE OF PIECE-WISE CONSTANTS
-//   //    COEFFICIENT FOR ITS LAST COMPONENT.
-
-//   VECTORARRAYCOEFFICIENT F(DIM);
-//   FOR (INT I = 0; I < DIM-1; I++)
-//     {
-//       F.SET(I, NEW CONSTANTCOEFFICIENT(0.0));
-//     }
-
-//   PARLINEARFORM *B = NEW PARLINEARFORM(FESPACE);
-//   B->ASSEMBLE();
-//   IF (MYID == 0)
-//     {
-//       COUT << "R.H.S. ... " << FLUSH;
-//     }
-
-//   // DEFINE THE SOLUTION VECTOR X AS A FINITE ELEMENT GRID FUNCTION
-//   //    CORRESPONDING TO FESPACE. INITIALIZE X WITH INITIAL GUESS OF ZERO,
-//   //    WHICH SATISFIES THE BOUNDARY CONDITIONS.
-//   PARGRIDFUNCTION X(FESPACE);
-//   VECTORFUNCTIONCOEFFICIENT BOUNDARY_DIRICHLET_COEF(DIM, SOL_EXACT);
-//   X = 0.0;
-//   // TO USE IF THERE ARE DIFFERENT DIRICHLET CONDITIONS.
-//   // BEWARE, THE VALUES OF DIRICHLET BOUNDARY CONDITIONS ARE SET HERE !
-//   //PROJÈTE SOLUTION EXACTE SUR LES BORDS
-//   X.PROJECTBDRCOEFFICIENT(BOUNDARY_DIRICHLET_COEF, ESS_BDR);	
-
-//   // SET UP THE BILINEAR FORM A(.,.) ON THE FINITE ELEMENT SPACE
-//   //    CORRESPONDING TO THE LINEAR ELASTICITY INTEGRATOR WITH PIECE-WISE
-//   //    CONSTANTS COEFFICIENT LAMBDA AND MU.
-
-//   CONSTANTCOEFFICIENT MU_FUNC(MU);
-//   CONSTANTCOEFFICIENT LAMBDA_FUNC(LAMBDA);
-
-//   PARBILINEARFORM *A = NEW PARBILINEARFORM(FESPACE);
-//   BILINEARFORMINTEGRATOR *INTEG = NEW ELASTICITYINTEGRATOR(LAMBDA_FUNC, MU_FUNC);
-//   A->ADDDOMAININTEGRATOR(INTEG);
-
-//   // ASSEMBLE THE PARALLEL BILINEAR FORM AND THE CORRESPONDING LINEAR
-//   //     SYSTEM, APPLYING ANY NECESSARY TRANSFORMATIONS SUCH AS: PARALLEL
-//   //     ASSEMBLY, ELIMINATING BOUNDARY CONDITIONS, APPLYING CONFORMING
-//   //     CONSTRAINTS FOR NON-CONFORMING AMR, STATIC CONDENSATION, ETC.
-//   IF (MYID == 0) { COUT << "MATRIX ... " << FLUSH; }
-//   IF (STATIC_COND) { A->ENABLESTATICCONDENSATION(); }
-//   A->ASSEMBLE();
-
-//   HYPREPARMATRIX A;
-//   VECTOR B, X;
-
-//   A->FORMLINEARSYSTEM(ESS_TDOF_LIST, X, *B, A, X, B);
-//   IF (MYID == 0)
-//     {
-//       COUT << "DONE." << ENDL;
-//       COUT << "SIZE OF LINEAR SYSTEM: " << A.GETGLOBALNUMROWS() << ENDL;
-//     }
-
-//   // 13. DEFINE AND APPLY A PARALLEL PCG SOLVER FOR A X = B WITH THE BOOMERAMG
-//   //     PRECONDITIONER FROM HYPRE.
-
-//   IF(SOLVER){
-//     HYPREBOOMERAMG *AMG = NEW HYPREBOOMERAMG(A);
-//     IF (AMG_ELAST && !A->STATICCONDENSATIONISENABLED())
-//       {
-// 	AMG->SETELASTICITYOPTIONS(FESPACE);
-//       }
-//     ELSE
-//       {
-// 	AMG->SETSYSTEMSOPTIONS(DIM, REORDER_SPACE);
-//       }
-//     HYPREPCG *PCG = NEW HYPREPCG(A);
-//     PCG->SETTOL(1E-20);
-//     PCG->SETMAXITER(5000);
-//     PCG->SETPRINTLEVEL(2);
-//     PCG->SETPRECONDITIONER(*AMG);
-//     PCG->MULT(B, X);
-//     DELETE PCG;
-//     DELETE AMG;
-//   }
-//   ELSE{
-//     COUT<<"SOLVER DIRECT NON IMPLÉMENTÉ"<<ENDL;
-//   }   
+  // define the solution Vector x as a finite element Grid Function
+  //    corresponding to fespace. initialize x with initial guess of zero,
+  //    which satisfies the boundary conditions.
+  ParGridFunction x(fespace);
+  VectorFunctionCoefficient boundary_dirichlet_coef(dim, sol_exact);
+  x = 0.0;
+  // to use if there are different dirichlet conditions.
+  // beware, the values of dirichlet boundary conditions are Set here !
+  //projète solution exacte sur les bords
+  x.ProjectBdrCoefficient(boundary_dirichlet_coef, ess_bdr);	
+  // Set up the bilinear form a(.,.) on the finite element space
+  //    corresponding to the linear Elasticity integrator with piece-wise
+  //    Constants Coefficient lambda and mu.
+  ConstantCoefficient mu_func(mu);
+  ConstantCoefficient lambda_func(lambda);
+  ParBilinearForm *a = new ParBilinearForm(fespace);
+  BilinearFormIntegrator *integ = new ElasticityIntegrator(lambda_func, mu_func);
+  a->AddDomainIntegrator(integ);
+  // assemble the parallel bilinear form and the corresponding linear
+  //     system, applying any necessary transformations such as: parallel
+  //     assembly, eliminating boundary conditions, applying conforming
+  //     constraints for non-conforming amr, static condensation, etc.
+  if (myid == 0) { cout << "matrix ... " << flush; }
+  if (static_cond) { a->EnableStaticCondensation(); }
+  a->Assemble();
+  HypreParMatrix A;
+  Vector B, X;
+  a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);
+  if (myid == 0)
+    {
+      cout << "done." << endl;
+      cout << "Size of linear system: " << A.GetGlobalNumRows() << endl;
+    }
+  // 13. define and apply a parallel pcg solver for a x = b with the boomeramg
+  //     preconditioner from hypre.
+  if(solver){
+    HypreBoomerAMG *amg = new HypreBoomerAMG(A);
+    if (amg_elast && !a->StaticCondensationIsEnabled())
+      {
+ 	amg->SetElasticityOptions(fespace);
+      }
+    else
+      {
+ 	amg->SetSystemsOptions(dim, reorder_space);
+      }
+    HyprePCG *pcg = new HyprePCG(A);
+    pcg->SetTol(1e-20);
+    pcg->SetMaxIter(5000);
+    pcg->SetPrintLevel(2);
+    pcg->SetPreconditioner(*amg);
+    pcg->Mult(B, X);
+    delete pcg;
+    delete amg;
+  }
+  else{
+    cout<<"solver direct non implémenté"<<endl;
+  }   
 
 
-//   // 12. RECOVER THE SOLUTION AS A FINITE ELEMENT GRID FUNCTION.
-//   A->RECOVERFEMSOLUTION(X, *B, X);
+  // 12. recover the solution as a finite element Grid Function.
+  a->RecoverFEMSolution(X, *b, x);
 
 
-//   // 13. FOR NON-NURBS MESHES, MAKE THE MESH CURVED BASED ON THE FINITE ELEMENT
-//   //     SPACE. THIS MEANS THAT WE DEFINE THE MESH ELEMENTS THROUGH A FESPACE
-//   //     BASED TRANSFORMATION OF THE REFERENCE ELEMENT. THIS ALLOWS US TO SAVE
-//   //     THE DISPLACED MESH AS A CURVED MESH WHEN USING HIGH-ORDER FINITE
-//   //     ELEMENT DISPLACEMENT FIELD. WE ASSUME THAT THE INITIAL MESH (READ FROM
-//   //     THE FILE) IS NOT HIGHER ORDER CURVED MESH C<OMPARED TO THE CHOSEN FE
-//   //     SPACE.
-//   IF (!USE_NODAL_FESPACE)
-//     {
-//       PMESH->SETNODALFESPACE(FESPACE);
-//     }
+  // 13. for non-nurbs meshes, make the mesh curved based on the finite element
+  //     space. this means that we define the mesh elements through a fespace
+  //     based transformation of the reference element. this allows us to save
+  //     the displaced mesh as a curved mesh when using high-order finite
+  //     element displacement field. we assume that the initial mesh (read from
+  //     the file) is not higher order curved mesh c<ompared to the chosen fe
+  //     space.
+  if (!use_nodal_fespace)
+    {
+      pmesh->SetNodalFESpace(fespace);
+    }
 
-//   // COMPUTE ERRORS
-//   DOUBLE ENER_ERROR = COMPUTEENERGYNORM(X, LAMBDA_FUNC, MU_FUNC);
-//   VECTORFUNCTIONCOEFFICIENT SOL_EXACT_COEF(DIM, SOL_EXACT);
-//   DOUBLE L2_ERROR = X.COMPUTEL2ERROR(SOL_EXACT_COEF);
-//   DOUBLE H1_ERROR = COMPUTEH1NORM(X);
-//   IF (MYID == 0)
-//     {
-//       COUT<<"ERREUR EN NORME L2: "<<L2_ERROR<<ENDL;
-//       COUT<<"ERREUR EN NORME ÉNERGIE: "<<ENER_ERROR<<ENDL;
-//       COUT<<"ERREUR EN NORME H1: "<<H1_ERROR<<ENDL;  
-//       COUT<<"TAILLE DE MAILLE: "<<H<<ENDL;    
-//       COUT << "NUMBERS OF ELEMENTS: " << PMESH->GETNE() <<ENDL;
-//     }
-//   //  FREE THE USED MEMORY.
-//   DELETE A;
-//   DELETE B;
-//   IF (FEC)
-//     {
-//       DELETE FEC;
-//     }
-//   DELETE MESH;
-//   DELETE PMESH;
+  // compute errors
+  double ener_error = computeenergynorm(x, lambda_func, mu_func);
+  VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
+  double l2_error = x.ComputeL2Error(sol_exact_coef);
+  double h1_error = computeh1norm(x);
+  double h = mesh->GetElementSize(1);
+  if (myid == 0)
+    {
+      cout<<"erreur en norme l2: "<<l2_error<<endl;
+      cout<<"erreur en norme énergie: "<<ener_error<<endl;
+      cout<<"erreur en norme h1: "<<h1_error<<endl;  
+      cout<<"taille de maille: "<<h<<endl;    
+      cout << "numbers of elements: " << pmesh->GetNE() <<endl;
+    }
+  //  free the used memory.
+  delete a;
+  delete b;
+  if (fec)
+    {
+      delete fec;
+    }
+  delete mesh;
+  delete pmesh;
+  MPI_Finalize();
+  /*
+  //save in praview format
+  if (ref1==0){
+  ParGridFunction diff(fespace);
+  ParGridFunction ex1(fespace);
+  diff.projectCoefficient(sol_exact_coef);
+  ex1.projectCoefficient(sol_exact_coef);
+  diff-= x;
+  paraviewdatacollection paraview_dc("example2", mesh);
+  paraview_dc.Setprefixpath("paraview");
+  paraview_dc.Setlevelsofdetail(order+1);
+  paraview_dc.Setcycle(0);
+  paraview_dc.Setdataformat(vtkformat::binary)
+  paraview_dc.Sethighorderoutput(true);
+  paraview_dc.Settime(0.0); // Set the time
+  paraview_dc.registerfield("numerical_solution",&x);
+  paraview_dc.registerfield("diff-exact_solution",&diff);
+  paraview_dc.registerfield("exact_solution",&ex1);
+  paraview_dc.save();	
+  }
+  */
 
-//   MPI_FINALIZE();
-//   /*
-//   //SAVE IN PRAVIEW FORMAT
-//   IF (REF1==0){
-//   PARGRIDFUNCTION DIFF(FESPACE);
-//   PARGRIDFUNCTION EX1(FESPACE);
-//   DIFF.PROJECTCOEFFICIENT(SOL_EXACT_COEF);
-//   EX1.PROJECTCOEFFICIENT(SOL_EXACT_COEF);
-//   DIFF-= X;
+  return 0;
+}
+
+//===================== solution exacte =====================
+void sol_exact(const Vector &x, Vector &u)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  u(0) = -force/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
+  u(1) = -force/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - 
+ 			   (lambda+2*mu)*log(r2)/(lambda+mu));
+}
+double ux_exact(const Vector &x)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  return -force/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
+}
+
+double uy_exact(const Vector &x)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  return -force/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - 
+ 			   (lambda+2*mu)*log(r2)/(lambda+mu));
+}
+//===================== grad exacte =====================
+void grad_exact(const Vector &x, DenseMatrix &grad)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  grad(0,0) = -force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
+  grad(0,1) = -force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+  grad(1,1) = -force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
+ 				(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
+  grad(1,0) = -force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
+ 				(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+}
+void gradexact_x(const Vector &x, Vector &grad)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  grad(0) = -force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
+  grad(1) = -force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+}
+void gradexact_y(const Vector &x, Vector &grad)
+{
+  double r2 = x(1)*x(1)+x(0)*x(0);
+  double pi = M_PI;
+  grad(1) = -force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
+ 			      (lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
+  grad(0) = -force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
+ 			      (lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+}
+//===================== erreur en norme h1 =====================
+double computeh1norm(ParGridFunction &x){
+  ParFiniteElementSpace *fes = x.ParFESpace();
+  int dim = fes->GetMesh()->SpaceDimension();
+  MatrixFunctionCoefficient grad_exact_coef (dim, grad_exact);
+  ElementTransformation *trans;
+  DenseMatrix grad, gradh;
+  double error = 0.0;
+  Array<int> udofs;
+  for (int i = 0; i < fes->GetNE() ; i++)
+    {
+      const FiniteElement *fe = fes->GetFE(i);
+      const int order = 2*fe->GetOrder() + 3;   //<----------
+      const IntegrationRule *ir = &(IntRules.Get(fe->GetGeomType(), order));
+      trans = fes->GetElementTransformation(i);
+      const int dof = fe->GetDof();
+      const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+
+      DenseMatrix dshape(dof, dim);
+      DenseMatrix gh(dim, dim),gradh (dim, dim),grad(dim,dim);
+      fes->GetElementVDofs(i, udofs);
+      DenseMatrix loc_data(dof, dim);
+
+      for (int s=0 ; s<dim ; s++)
+ 	{
+ 	  Array<int> udofs_tmp(dof);
+ 	  udofs_tmp = 0.;
+ 	  for(int j=0 ; j<dof ; j++){
+ 	    udofs_tmp[j] = udofs[j+dof*s];}
+
+ 	  Vector loc_data_tmp;
+ 	  x.GetSubVector(udofs_tmp, loc_data_tmp);
+
+ 	  for (int j=0 ; j<dof ; j++)
+ 	    loc_data(j,s) = loc_data_tmp(j);
+ 	}
+      for (int j = 0; j < ir->GetNPoints(); j++)
+ 	{
+	  const IntegrationPoint &ip = ir->IntPoint(j);
+ 	  trans->SetIntPoint(&ip);
+ 	  double w = trans->Weight() * ip.weight;
+ 	  fe->CalcDShape(ip, dshape);
+ 	  MultAtB(loc_data, dshape, gh);
+	  Mult(gh, trans->InverseJacobian(), gradh);
+ 	  grad_exact_coef.Eval(grad,*trans,ip);
+ 	  grad -= gradh;
+ 	  error += w * grad.FNorm2();
+ 	}			
+    }
+  return (error < 0.0) ? -sqrt(-error) : sqrt(error);
+}
+
+//==============erreur en norme energie ===================
+double computeenergynorm(ParGridFunction &x,
+ 			 Coefficient &lambdah, Coefficient &muh)
+{
+  ParFiniteElementSpace *fes = x.ParFESpace();
+  int dim = fes->GetMesh()->SpaceDimension();
+  VectorFunctionCoefficient sol_exact_coef (dim, sol_exact);
+  ParGridFunction ex(fes);
+  ex.ProjectCoefficient(sol_exact_coef);
  
-//   PARAVIEWDATACOLLECTION PARAVIEW_DC("EXAMPLE2", MESH);
-//   PARAVIEW_DC.SETPREFIXPATH("PARAVIEW");
-//   PARAVIEW_DC.SETLEVELSOFDETAIL(ORDER+1);
-//   PARAVIEW_DC.SETCYCLE(0);
-//   PARAVIEW_DC.SETDATAFORMAT(VTKFORMAT::BINARY);
-//   PARAVIEW_DC.SETHIGHORDEROUTPUT(TRUE);
-//   PARAVIEW_DC.SETTIME(0.0); // SET THE TIME
-//   PARAVIEW_DC.REGISTERFIELD("NUMERICAL_SOLUTION",&X);
-//   PARAVIEW_DC.REGISTERFIELD("DIFF-EXACT_SOLUTION",&DIFF);
-//   PARAVIEW_DC.REGISTERFIELD("EXACT_SOLUTION",&EX1);
-//   PARAVIEW_DC.SAVE();	
-//   }
-//   */
+  ConstantCoefficient lambda_func(lambda);
+  ConstantCoefficient mu_func(mu);
+  ElementTransformation *trans;
+  double energy_local = 0.0, energy_global;
+  for (int i = 0; i < fes->GetNE() ; i++)
+    {
+      const FiniteElement *fe = fes->GetFE(i);
+      const int order = 2*fe->GetOrder()+3; // <----------
+      const IntegrationRule *ir = &IntRules.Get(fe->GetGeomType(), order);
+      const int dof = fe->GetDof();
+      const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+      trans = fes->GetElementTransformation(i);
+      Vector stressh(tdim), strainh(tdim);	//approché
+      Vector stress(tdim), strain(tdim);	//exacte
+      DenseMatrix c,ch;
+      for (int j = 0; j < ir->GetNPoints(); j++)
+ 	{
+ 	  const IntegrationPoint &ip = ir->IntPoint(j);
+ 	  trans->SetIntPoint(&ip);
+ 	  double w = trans->Weight() * ip.weight;
+ 	  computestress(*trans, ip, x, i, stressh);
+ 	  computestress(*trans, ip, ex, i, stress);
 
-//   RETURN 0;
-// }
+ 	  //======= stress Vectors ========
+ 	  elasticy_mat(*trans,ip,dim,lambda_func,mu_func,c);
+ 	  elasticy_mat(*trans,ip,dim,lambdah,muh,ch);
 
-// //===================== SOLUTION EXACTE =====================
-// VOID SOL_EXACT(CONST VECTOR &X, VECTOR &U)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
-//   U(0) = -FORCE/(4*PI*MU)*(2*X(0)*X(1)/R2 + 2*MU/(LAMBDA+MU)*ATAN2(X(1),X(0)));
-//   U(1) = -FORCE/(4*PI*MU)*((X(1)*X(1)-X(0)*X(0))/R2 - 
-// 			   (LAMBDA+2*MU)*LOG(R2)/(LAMBDA+MU));
-// }
-// DOUBLE UX_EXACT(CONST VECTOR &X)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
-//   RETURN -FORCE/(4*PI*MU)*(2*X(0)*X(1)/R2 + 2*MU/(LAMBDA+MU)*ATAN2(X(1),X(0)));
-// }
+ 	  ch.Mult(stressh,strainh);	//approx
+ 	  c.Mult(stress,strain);	//exacte
 
-// DOUBLE UY_EXACT(CONST VECTOR &X)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
-//   RETURN -FORCE/(4*PI*MU)*((X(1)*X(1)-X(0)*X(0))/R2 - 
-// 			   (LAMBDA+2*MU)*LOG(R2)/(LAMBDA+MU));
-// }
-// //===================== GRAD EXACTE =====================
-// VOID GRAD_EXACT(CONST VECTOR &X, DENSEMATRIX &GRAD)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
+ 	  strainh -= strain;
+ 	  stressh -= stress;
 
-//   GRAD(0,0) = -FORCE/(4*PI*MU)*(2*X(1)*(X(1)*X(1)-X(0)*X(0))/(R2*R2)-2*MU/(LAMBDA+MU)*X(1)/R2);
-//   GRAD(0,1) = -FORCE/(4*PI*MU)*(2*X(0)*(X(0)*X(0)-X(1)*X(1))/(R2*R2) + 2*MU/(LAMBDA+MU)*X(0)/R2);
-//   GRAD(1,1) = -FORCE/(4*PI*MU)*(4*X(1)*X(0)*X(0)/(R2*R2) - 
-// 				(LAMBDA+2*MU)/(LAMBDA+MU)*2*X(1)/R2);
-//   GRAD(1,0) = -FORCE/(4*PI*MU)*(-4*X(1)*X(1)*X(0)/(R2*R2) - 
-// 				(LAMBDA+2*MU)/(LAMBDA+MU)*2*X(0)/R2);
-// }
-// VOID GRADEXACT_X(CONST VECTOR &X, VECTOR &GRAD)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
-//   GRAD(0) = -FORCE/(4*PI*MU)*(2*X(1)*(X(1)*X(1)-X(0)*X(0))/(R2*R2)-2*MU/(LAMBDA+MU)*X(1)/R2);
-//   GRAD(1) = -FORCE/(4*PI*MU)*(2*X(0)*(X(0)*X(0)-X(1)*X(1))/(R2*R2) + 2*MU/(LAMBDA+MU)*X(0)/R2);
-// }
-// VOID GRADEXACT_Y(CONST VECTOR &X, VECTOR &GRAD)
-// {
-//   DOUBLE R2 = X(1)*X(1)+X(0)*X(0);
-//   DOUBLE PI = M_PI;
-//   GRAD(1) = -FORCE/(4*PI*MU)*(4*X(1)*X(0)*X(0)/(R2*R2) - 
-// 			      (LAMBDA+2*MU)/(LAMBDA+MU)*2*X(1)/R2);
-//   GRAD(0) = -FORCE/(4*PI*MU)*(-4*X(1)*X(1)*X(0)/(R2*R2) - 
-// 			      (LAMBDA+2*MU)/(LAMBDA+MU)*2*X(0)/R2);
-// }
+ 	  double pdc=0.0;
+ 	  for (int k = 0; k< dim; k++)
+ 	    pdc += strainh(k)*stressh(k);
+ 	  for (int k = dim; k < dim*(dim+1)/2; k++)
+ 	    pdc += 2*strainh(k)*stressh(k);
 
-// //===================== ERREUR EN NORME H1 =====================
-// DOUBLE COMPUTEH1NORM(GRIDFUNCTION &X){
-//   FINITEELEMENTSPACE *FES = X.FESPACE();
-//   INT DIM = FES->GETMESH()->SPACEDIMENSION();
+ 	  energy_local += w * pdc;
+ 	}
+    }
+  MPI_Reduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM, 0,
+ 	     MPI_COMM_WORLD);
+  return (energy_global < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
+}
 
-//   MATRIXFUNCTIONCOEFFICIENT GRAD_EXACT_COEF (DIM, GRAD_EXACT);
-//   ELEMENTTRANSFORMATION *TRANS;
-//   DENSEMATRIX GRAD, GRADH;
-//   DOUBLE ERROR = 0.0;
-//   ARRAY<INT> UDOFS;
-//   FOR (INT I = 0; I < FES->GETNE() ; I++)
-//     {
-//       CONST FINITEELEMENT *FE = FES->GETFE(I);
-//       CONST INT ORDER = 2*FE->GETORDER() + 3;   //<----------
-//       CONST INTEGRATIONRULE *IR = &(INTRULES.GET(FE->GETGEOMTYPE(), ORDER));
-//       TRANS = FES->GETELEMENTTRANSFORMATION(I);
-//       CONST INT DOF = FE->GETDOF();
-//       CONST INT TDIM = DIM*(DIM+1)/2; // NUM. ENTRIES IN A SYMMETRIC TENSOR
+//===================== matrice élasticité =====================
+void elasticy_mat(ElementTransformation &t,const IntegrationPoint &ip, 
+ 		  int dim, Coefficient &lambda, Coefficient &mu_func, DenseMatrix &c){
+  double m = mu_func.Eval(t, ip);
+  double l = lambda.Eval(t, ip);
+  c.SetSize(dim*(dim+1)/2,dim*(dim+1)/2);
+  c = 0.;
+  for (int k = 0; k< dim; k++)
+    {
+      // extra-diagonal terms
+      for (int lh = 0; lh< dim; lh++)
+ 	c(k,lh) = l;
+      // diagonal terms
+      c(k,k) = l+2*m;
+    }
+  // diagonal terms
+  for (int k = dim; k < dim*(dim+1)/2; k++)
+    c(k,k) = m;
+}
+//===================== déformation =====================
+void computestress(ElementTransformation &t,const IntegrationPoint &ip,
+ 		   ParGridFunction &x, int elem,  Vector &stress){
+  ParFiniteElementSpace *fes = x.ParFESpace();
+  Array<int> udofs;
+  const FiniteElement *fe = fes->GetFE(elem);
+  const int dof = fe->GetDof();
+  const int dim = fe->GetDim();
+  const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+  DenseMatrix dshape(dof, dim);
+  DenseMatrix gh(dim, dim),grad (dim, dim);
+  fes->GetElementVDofs(elem, udofs);
+  DenseMatrix loc_data(dof, dim);
+  for (int s=0 ; s<dim ; s++)
+    {
+      Array<int> udofs_tmp(dof);
+      udofs_tmp = 0.;
+      for(int j=0 ; j<dof ; j++){
+ 	udofs_tmp[j] = udofs[j+dof*s];}
+      Vector loc_data_tmp;
+      x.GetSubVector(udofs_tmp, loc_data_tmp);
 
-//       DENSEMATRIX DSHAPE(DOF, DIM);
-//       DENSEMATRIX GH(DIM, DIM),GRADH (DIM, DIM),GRAD(DIM,DIM);
-//       FES->GETELEMENTVDOFS(I, UDOFS);
-//       DENSEMATRIX LOC_DATA(DOF, DIM);
-
-//       FOR (INT S=0 ; S<DIM ; S++)
-// 	{
-// 	  ARRAY<INT> UDOFS_TMP(DOF);
-// 	  UDOFS_TMP = 0.;
-// 	  FOR(INT J=0 ; J<DOF ; J++){
-// 	    UDOFS_TMP[J] = UDOFS[J+DOF*S];}
-
-// 	  VECTOR LOC_DATA_TMP;
-// 	  X.GETSUBVECTOR(UDOFS_TMP, LOC_DATA_TMP);
-
-// 	  FOR (INT J=0 ; J<DOF ; J++)
-// 	    LOC_DATA(J,S) = LOC_DATA_TMP(J);
-// 	}
-//       FOR (INT J = 0; J < IR->GETNPOINTS(); J++)
-// 	{
-// 	  CONST INTEGRATIONPOINT &IP = IR->INTPOINT(J);
-// 	  TRANS->SETINTPOINT(&IP);
-// 	  DOUBLE W = TRANS->WEIGHT() * IP.WEIGHT;
-// 	  FE->CALCDSHAPE(IP, DSHAPE);
-// 	  MULTATB(LOC_DATA, DSHAPE, GH);
-// 	  MULT(GH, TRANS->INVERSEJACOBIAN(), GRADH);
-// 	  GRAD_EXACT_COEF.EVAL(GRAD,*TRANS,IP);
-// 	  GRAD -= GRADH;
-// 	  ERROR += W * GRAD.FNORM2();
-// 	}			
-//     }
-//   RETURN (ERROR < 0.0) ? -SQRT(-ERROR) : SQRT(ERROR);
-// }
-
-// //==============ERREUR EN NORME ENERGIE ===================
-// DOUBLE COMPUTEENERGYNORM(GRIDFUNCTION &X,
-// 			 COEFFICIENT &LAMBDAH, COEFFICIENT &MUH)
-// {
-//   FINITEELEMENTSPACE *FES = X.FESPACE();
-//   INT DIM = FES->GETMESH()->SPACEDIMENSION();
-//   VECTORFUNCTIONCOEFFICIENT SOL_EXACT_COEF (DIM, SOL_EXACT);
-//   GRIDFUNCTION EX(FES);
-//   EX.PROJECTCOEFFICIENT(SOL_EXACT_COEF);
-  
-//   CONSTANTCOEFFICIENT LAMBDA_FUNC(LAMBDA);
-//   CONSTANTCOEFFICIENT MU_FUNC(MU);
-//   ELEMENTTRANSFORMATION *TRANS;
-
-//   DOUBLE ENERGY = 0.0;
-//   FOR (INT I = 0; I < FES->GETNE() ; I++)
-//     {
-//       CONST FINITEELEMENT *FE = FES->GETFE(I);
-//       CONST INT ORDER = 2*FE->GETORDER()+3; // <----------
-//       CONST INTEGRATIONRULE *IR = &INTRULES.GET(FE->GETGEOMTYPE(), ORDER);
-//       CONST INT DOF = FE->GETDOF();
-//       CONST INT TDIM = DIM*(DIM+1)/2; // NUM. ENTRIES IN A SYMMETRIC TENSOR
-//       TRANS = FES->GETELEMENTTRANSFORMATION(I);
-//       VECTOR STRESSH(TDIM), STRAINH(TDIM);	//APPROCHÉ
-//       VECTOR STRESS(TDIM), STRAIN(TDIM);	//EXACTE
-//       DENSEMATRIX C,CH;
-//       FOR (INT J = 0; J < IR->GETNPOINTS(); J++)
-// 	{
-// 	  CONST INTEGRATIONPOINT &IP = IR->INTPOINT(J);
-// 	  TRANS->SETINTPOINT(&IP);
-// 	  DOUBLE W = TRANS->WEIGHT() * IP.WEIGHT;
-
-// 	  COMPUTESTRESS(*TRANS, IP, X, I, STRESSH);
-// 	  COMPUTESTRESS(*TRANS, IP, EX, I, STRESS);
-
-// 	  //======= STRESS VECTORS ========
-// 	  ELASTICY_MAT(*TRANS,IP,DIM,LAMBDA_FUNC,MU_FUNC,C);
-// 	  ELASTICY_MAT(*TRANS,IP,DIM,LAMBDAH,MUH,CH);
-
-// 	  CH.MULT(STRESSH,STRAINH);	//APPROX
-// 	  C.MULT(STRESS,STRAIN);	//EXACTE
-
-// 	  STRAINH -= STRAIN;
-// 	  STRESSH -= STRESS;
-
-// 	  DOUBLE PDC=0.0;
-// 	  FOR (INT K = 0; K< DIM; K++)
-// 	    PDC += STRAINH(K)*STRESSH(K);
-
-// 	  FOR (INT K = DIM; K < DIM*(DIM+1)/2; K++)
-// 	    PDC += 2*STRAINH(K)*STRESSH(K);
-
-// 	  ENERGY += W * PDC;
-// 	}
-//     }
-//   MPI_REDUCE(&ENERGY_LOCAL, &ENERGY_GLOBAL, 1, MPI_DOUBLE, MPI_SUM, 0,
-// 	     MPI_COMM_WORLD);
-//   RETURN (ENERGY_GLOBAL < 0.0) ? -SQRT(-ENERGY_GLOBAL) : SQRT(ENERGY_GLOBAL);
-// }
-
-// //===================== MATRICE ÉLASTICITÉ =====================
-// VOID ELASTICY_MAT(ELEMENTTRANSFORMATION &T,CONST INTEGRATIONPOINT &IP, 
-// 		  INT DIM, COEFFICIENT &LAMBDA, COEFFICIENT &MU_FUNC, DENSEMATRIX &C){
-//   DOUBLE M = MU_FUNC.EVAL(T, IP);
-//   DOUBLE L = LAMBDA.EVAL(T, IP);
-
-//   C.SETSIZE(DIM*(DIM+1)/2,DIM*(DIM+1)/2);
-//   C = 0.;
-//   FOR (INT K = 0; K< DIM; K++)
-//     {
-//       // EXTRA-DIAGONAL TERMS
-//       FOR (INT L = 0; L< DIM; L++)
-// 	C(K,L) = L;
-//       // DIAGONAL TERMS
-//       C(K,K) = L+2*M;
-//     }
-//   // DIAGONAL TERMS
-//   FOR (INT K = DIM; K < DIM*(DIM+1)/2; K++)
-//     C(K,K) = M;
-// }
-
-// //===================== DÉFORMATION =====================
-// VOID COMPUTESTRESS(ELEMENTTRANSFORMATION &T,CONST INTEGRATIONPOINT &IP,
-// 		   GRIDFUNCTION &X, INT ELEM,  VECTOR &STRESS){
-//   FINITEELEMENTSPACE *FES = X.FESPACE();
-//   ARRAY<INT> UDOFS;
-//   CONST FINITEELEMENT *FE = FES->GETFE(ELEM);
-//   CONST INT DOF = FE->GETDOF();
-//   CONST INT DIM = FE->GETDIM();
-//   CONST INT TDIM = DIM*(DIM+1)/2; // NUM. ENTRIES IN A SYMMETRIC TENSOR
-	
-//   DENSEMATRIX DSHAPE(DOF, DIM);
-//   DENSEMATRIX GH(DIM, DIM),GRAD (DIM, DIM);
-//   FES->GETELEMENTVDOFS(ELEM, UDOFS);
-//   DENSEMATRIX LOC_DATA(DOF, DIM);
-//   FOR (INT S=0 ; S<DIM ; S++)
-//     {
-//       ARRAY<INT> UDOFS_TMP(DOF);
-//       UDOFS_TMP = 0.;
-//       FOR(INT J=0 ; J<DOF ; J++){
-// 	UDOFS_TMP[J] = UDOFS[J+DOF*S];}
-
-//       VECTOR LOC_DATA_TMP;
-//       X.GETSUBVECTOR(UDOFS_TMP, LOC_DATA_TMP);
-
-//       FOR (INT J=0 ; J<DOF ; J++)
-// 	LOC_DATA(J,S) = LOC_DATA_TMP(J);
-//     }
-
-//   DOUBLE W = T.WEIGHT() * IP.WEIGHT;
-//   FE->CALCDSHAPE(IP, DSHAPE);
-//   MULTATB(LOC_DATA, DSHAPE, GH);
-//   MULT(GH, T.INVERSEJACOBIAN(), GRAD);
-//   STRESS(0)=GRAD(0,0);
-//   STRESS(1)=GRAD(1,1);
-//   IF(DIM==2){
-//     STRESS(2)=0.5*(GRAD(1,0)+GRAD(0,1));
-//   }
-//   ELSE IF(DIM==3){
-//     STRESS(2)=GRAD(2,2);
-//     STRESS(3)=0.5*(GRAD(1,0)+GRAD(0,1));
-//     STRESS(4)=0.5*(GRAD(2,0)+GRAD(0,2));
-//     STRESS(5)=0.5*(GRAD(2,1)+GRAD(1,2));
-//   }
-//   ELSE{
-//     COUT<<"DIMENTION NOT SUPORTED"<<ENDL;}
-// }
+      for (int j=0 ; j<dof ; j++)
+ 	loc_data(j,s) = loc_data_tmp(j);
+    }
+  double w = t.Weight() * ip.weight;
+  fe->CalcDShape(ip, dshape);
+  MultAtB(loc_data, dshape, gh);
+  Mult(gh, t.InverseJacobian(), grad);
+  stress(0)=grad(0,0);
+  stress(1)=grad(1,1);
+  if(dim==2){
+    stress(2)=0.5*(grad(1,0)+grad(0,1));
+  }
+  else if(dim==3){
+    stress(2)=grad(2,2);
+    stress(3)=0.5*(grad(1,0)+grad(0,1));
+    stress(4)=0.5*(grad(2,0)+grad(0,2));
+    stress(5)=0.5*(grad(2,1)+grad(1,2));
+  }
+  else{
+    cout<<"dimention not suported"<<endl;}
+}
 
