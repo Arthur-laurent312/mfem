@@ -445,13 +445,13 @@ double ComputeEnergyNorm(GridFunction &x,
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
 
+	  //======= Stress vectors ========
 	  ComputeStress(*Trans, ip, x, i, stressh);
 	  ComputeStress(*Trans, ip, ex, i, stress);
 
-	  //======= Stress vectors ========
+	  //======= Strain vectors ========
 	  Elasticy_mat(*Trans,ip,dim,lambda_func,mu_func,C);
 	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
-
 	  Ch.Mult(stressh,strainh);	//approx
 	  C.Mult(stress,strain);	//exacte
 
@@ -463,7 +463,7 @@ double ComputeEnergyNorm(GridFunction &x,
 	    pdc += strainh(k)*stressh(k);
 
 	  for (int k = dim; k < dim*(dim+1)/2; k++)
-	    pdc += 2*strainh(k)*stressh(k);
+	    //pdc += 2*strainh(k)*stressh(k);
 
 	  energy += w * pdc;
 	}
