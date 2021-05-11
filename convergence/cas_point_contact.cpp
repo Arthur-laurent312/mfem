@@ -188,12 +188,11 @@ int main(int argc, char *argv[])
       // Compute errors
       double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
-//double H1_error =0.0;    
-  double L2_error = x.ComputeL2Error(sol_exact_coef);
-	double H1_error = ComputeH1Norm(x);
+      double L2_error = x.ComputeL2Error(sol_exact_coef);
+      double H1_error = ComputeH1Norm(x);
       cout<<"Erreur en Norme L2: "<<L2_error<<endl;
       cout<<"Erreur en Norme Énergie: "<<ener_error<<endl;
-	cout<<"Erreur en Norme H1: "<<H1_error<<endl;
+      cout<<"Erreur en Norme H1: "<<H1_error<<endl;
 
       double h = mesh->GetElementSize(1);
       //Compute the slope
@@ -259,12 +258,12 @@ int main(int argc, char *argv[])
     cout<<"Erreur en norme:"<<endl;
     for (int i=1; i<iter; i++){
       cout << "L2: " << slope_l2(i,2) << " Energie: "  << slope_ener(i,2)
-	<< " H1: "<< slope_grad(i,2)<<" Taille de maille= "<<slope_l2(i,1)<<endl;}
+	   << " H1: "<< slope_grad(i,2)<<" Taille de maille= "<<slope_l2(i,1)<<endl;}
     cout<<endl;
     cout<<"Pente de convergence:"<<endl;
     for (int i=1; i<iter; i++){
       cout << "Pente L2: " << slope_l2(i,0) << " Energie: " << slope_ener(i,0)<<" H1: " 
-	<< slope_grad(i,0)<<" Taille de maille= "<<slope_l2(i,1)<<endl;}
+	   << slope_grad(i,0)<<" Taille de maille= "<<slope_l2(i,1)<<endl;}
     cout<<endl;
 
   }	//end flux .txt
@@ -300,12 +299,12 @@ void Grad_Exact(const Vector &x, DenseMatrix &grad)
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
 
-  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*x(1)*x(1)/(r2*r2) - 2*mu/(lambda+mu)*x(1)/r2);
-  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*x(0)*x(0)/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
+  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
   grad(1,1) = -Force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
-			(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
+				(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
   grad(1,0) = -Force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
-			(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+				(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
 }
 void GradExact_x(const Vector &x, Vector &grad)
 {
@@ -319,9 +318,9 @@ void GradExact_y(const Vector &x, Vector &grad)
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
   grad(1) = -Force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
-		(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
+			      (lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
   grad(0) = -Force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
-		(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+			      (lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
 }
 
 //===================== Erreur en norme H1 =====================

@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
 
       double pdc = Norm_Energie_Exact();
       
-      double err_grad = ComputeGradNorm(x);
+      double err_grad = ComputeH1Norm(x);
       //cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
       double L2_error = x.ComputeL2Error(sol_exact_coef);
