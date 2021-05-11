@@ -33,13 +33,14 @@ void Grad(ElementTransformation &,const IntegrationPoint &,
 
 int main(int argc, char *argv[])
 {
+
+
   // Initialize MPI.
   int num_procs, myid;
   MPI_Init(&argc, &argv);
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-   
-  // Parse command-line options.
+ // Parse command-line options.
   int order=2;
   const char *mesh_file = "carre.msh";
   bool static_cond = false;
@@ -60,7 +61,7 @@ int main(int argc, char *argv[])
   args.AddOption(&reorder_space, "-nodes", "--by-nodes", "-vdim", "--by-vdim",
 		 "Use byNODES ordering of vector space instead of byVDIM");
   args.AddOption(&solver, "-sol", "--Itératif", "-Direct",
-		 "--Solver Itératif", "Solver direct.");
+		 "--Solver Itératif", "Solver direct.");   
 
   int ref_levels = 6;
 
@@ -396,9 +397,9 @@ double ComputeEnergyNorm(ParGridFunction &x,
 	  energy_local += w * pdc;
 	}
     }
-	MPI_Reduce(&energy_local, &energy_global, 1, MPI_FLOAT, MPI_SUM, 0,
+	MPI_Reduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM, 0,
            MPI_COMM_WORLD);
-  return (energy < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
+  return (energy_global < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
 }
 
 
