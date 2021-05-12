@@ -451,7 +451,7 @@ double ComputeEnergyNorm(GridFunction &x,
 	  double w = Trans->Weight() * ip.weight;
 
 	  //======= strain vectors ========
-	  ComputeStress(*Trans, ip, x, i, strainh);//approx
+	  ComputeStrain(*Trans, ip, x, i, strainh);//approx
 	  Strain_exacte_coef.Eval(strain,*Trans,ip);//exact
 
 	  //======= Stress vectors ========
@@ -534,7 +534,7 @@ void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
   strain(0)=grad(0,0);
   strain(1)=grad(1,1);
   if(dim==2){
-    stress(2)=0.5*(grad(1,0)+grad(0,1));
+    strain(2)=0.5*(grad(1,0)+grad(0,1));
   }
   else if(dim==3){
     strain(2)=grad(2,2);

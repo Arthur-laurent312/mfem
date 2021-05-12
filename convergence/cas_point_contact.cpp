@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
 
   slope_ener.SetSize(rep-1,3); slope_l2.SetSize(rep-1,3),
 				 slope_grad.SetSize(rep-1,3);
-  string const err_energy("error_contact_ordre2.txt");
+  string const err_energy("error_contact_ordre3.txt");
   ofstream err_energy_flux(err_energy.c_str());
 
   if (!err_energy_flux.is_open()) {
