@@ -361,7 +361,7 @@ double computeh1norm(ParGridFunction &x){
   MatrixFunctionCoefficient grad_exact_coef (dim, grad_exact);
   ElementTransformation *trans;
   DenseMatrix grad, gradh;
-  double error_locas = 0.0, error_global = 0.0;
+  double error_local = 0.0, error_global = 0.0;
   Array<int> udofs;
   for (int i = 0; i < fes->GetNE() ; i++)
     {
