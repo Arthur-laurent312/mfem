@@ -410,7 +410,7 @@ double computeh1norm(ParGridFunction &x){
   if(error_global>0.0){
     return sqrt(error_global);}
   else{
-    cout<<"Negative H1 error"<<endl;
+    //cout<<"Negative H1 error"<<endl;
     return 0;
   }
 }
