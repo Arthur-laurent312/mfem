@@ -361,7 +361,7 @@ double computeh1norm(ParGridFunction &x){
   MatrixFunctionCoefficient grad_exact_coef (dim, grad_exact);
   ElementTransformation *trans;
   DenseMatrix grad, gradh;
-  double error = 0.0;
+  double error_locas = 0.0, error_global = 0.0;
   Array<int> udofs;
   for (int i = 0; i < fes->GetNE() ; i++)
     {
@@ -400,11 +400,13 @@ double computeh1norm(ParGridFunction &x){
 	  Mult(gh, trans->InverseJacobian(), gradh);
  	  grad_exact_coef.Eval(grad,*trans,ip);
  	  grad -= gradh;
- 	  error += w * grad.FNorm2();
+ 	  error_local += w * grad.FNorm2();
  	}			
     }
-  if(error>0.0){
-    return sqrt(error);}
+  MPI_Reduce(&error_local, &error_global, 1, MPI_DOUBLE, MPI_SUM, 0,
+ 	     MPI_COMM_WORLD);
+  if(error_global>0.0){
+    return sqrt(error_global);}
   else{
 	cout<<"Negative H1 error"<<endl;
     exit(0);}
