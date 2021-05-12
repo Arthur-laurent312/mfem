@@ -29,7 +29,7 @@ void Strain_exacte(const Vector &, Vector &);
 
 //Erreur en norme energie
 double computeenergynorm(ParGridFunction &,
-			   Coefficient &, Coefficient &);
+			 Coefficient &, Coefficient &);
 
 void elasticy_mat(ElementTransformation &,const IntegrationPoint &, 
 		  int, Coefficient &, Coefficient &, DenseMatrix &);
@@ -306,8 +306,10 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
 {
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
-  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
-  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2) -
+				2*mu/(lambda+mu)*x(1)/r2);
+  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 
+				2*mu/(lambda+mu)*x(0)/r2);
   grad(1,1) = -Force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
  				(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
   grad(1,0) = -Force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
@@ -408,8 +410,9 @@ double computeh1norm(ParGridFunction &x){
   if(error_global>0.0){
     return sqrt(error_global);}
   else{
-	cout<<"Negative H1 error"<<endl;
-    exit(0);}
+    cout<<"Negative H1 error"<<endl;
+    return 0;
+  }
 }
 
 //==============erreur en norme energie ===================
@@ -465,8 +468,8 @@ double computeenergynorm(ParGridFunction &x,
   if(energy_global>0.0){
     return sqrt(energy_global);}
   else{
-	return 0; //cout<<"Negative Energy error"<<endl;
-    }
+    return 0; //cout<<"Negative Energy error"<<endl;
+  }
 }
 
 //===================== matrice élasticité =====================
