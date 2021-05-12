@@ -2,7 +2,7 @@
 //
 //Cas test elsatique linéaire d'une poutre isotrope en flexion.
 //Résolution de l'équation: -div(\sigma(u))=f
-//La charge P est appliqué suivant un profil parabolique.
+//La charge P est appliqué suivant un profil parabolique F.
 //Condition de dirichlet u_h=u_{exacte} à l'encastrement.
 //Solution analytique disponible.
 //
@@ -36,6 +36,8 @@ static constexpr double mu = E/(2.*(1.+nu));
 //Solution exacte
 void sol_exact(const Vector &, Vector &);
 void grad_exact(const Vector &, DenseMatrix &);
+void Stress_exacte(const Vector &, Vector &);
+void Strain_exacte(const Vector &, Vector &);
 
 //Chargement
 double F(const Vector &);
@@ -48,11 +50,8 @@ double ComputeEnergyNorm(GridFunction &,
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int,
 		  Coefficient &, Coefficient &, DenseMatrix &);
-
-void ComputeStress(ElementTransformation &,const IntegrationPoint &,
+void ComputeStrain(ElementTransformation &,const IntegrationPoint &,
 		   GridFunction &, int,  Vector &);
-
-double Norm_Energie_Exact();
 
 int main(int argc, char *argv[])
 {
@@ -62,7 +61,7 @@ int main(int argc, char *argv[])
   int iter = 0;
 
   // Parse command-line options.
-  const char *mesh_file = "../data/beam-quad.mesh";
+  const char *mesh_file = "beam-bar.msh";
   bool static_cond = false;
   int order = 2;
   int rep = 7 ;
@@ -91,15 +90,15 @@ int main(int argc, char *argv[])
   slope_l2.SetSize(rep-1,3);
   slope_grad.SetSize(rep-1,3);
 
-  string const err_energy("err_flexion.txt");
+  string const err_energy("err_flexion_ordre2.txt");
   ofstream err_energy_flux(err_energy.c_str());
-  //GL: ajouter is_open()
   if (!err_energy_flux.is_open()) {
     cout << "Problem in openning file" << endl;
     exit(0);
   }
 
   {
+    cout << "Openning file" << endl;
     Mesh *mesh = new Mesh(mesh_file, 1, 1);
     // 2. Read the mesh from the given mesh file. We can handle triangular,
     //    quadrilateral, tetrahedral or hexahedral elements with the same code.
@@ -124,19 +123,6 @@ int main(int argc, char *argv[])
       //    In this example, the boundary conditions are defined by marking only
       //    boundary attribute 1 from the mesh as essential and converting it to a
       //    list of true dofs.
-  
-      /*
-  	Array<int> ess_tdof_list, tmp_tdof, ess_bdr(mesh->bdr_attributes.Max());
-  	cout << "bdr_attributes.Max()" << std::endl;
-  	ess_bdr = 0;
-  	// ess_bdr[0] refers to dof on the "xz0" plane
-  	ess_bdr[0] = 1;
-  	// grab all dof on "xz0" and put them into tmp_dof.
-  	// last parameter is 1 to set "y" direction for dirichlet condition.
-  	fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof); 
-  	// ess_tof_list accumulates all needed dof
-  	ess_tdof_list.Append(tmp_tdof);
-      */
   
       // List of True DoFs : Define (here) Dirichlet conditions
       Array<int> ess_tdof_list;
@@ -222,34 +208,16 @@ int main(int argc, char *argv[])
       }
       // 12. Recover the solution as a finite element grid function.
       a->RecoverFEMSolution(X, *b, x);
-  
-  
-      //	// 13. For non-NURBS meshes, make the mesh curved based on the finite element
-      //	//     space. This means that we define the mesh elements through a fespace
-      //	//     based transformation of the reference element. This allows us to save
-      //	//     the displaced mesh as a curved mesh when using high-order finite
-      //	//     element displacement field. We assume that the initial mesh (read from
-      //	//     the file) is not higher order curved mesh compared to the chosen FE
-      //	//     space.
-      //	if (!mesh->NURBSext)
-      //	  {
-      //	    mesh->SetNodalFESpace(fespace);
-      //	  }
-      //
 
       // Compute error
       double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
-
-      double pdc = Norm_Energie_Exact();
-      
-      double err_grad = ComputeH1Norm(x);
-      //cout << "ener exact: "<< abs(pdc - ener_error)<<endl;
+      double err_H1 = ComputeH1Norm(x);
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
       double L2_error = x.ComputeL2Error(sol_exact_coef);
   	
       cout << "\nL2 norm of error: " << L2_error << endl;
       cout << "Energy norm of error: " << ener_error << endl;
-      cout << "Grad norm of error: " << err_grad << endl << endl;
+      cout << "H1 norm of error: " << err_H1 << endl << endl;
   
       double h = mesh->GetElementSize(0);
       //Compute the slope
@@ -263,17 +231,11 @@ int main(int argc, char *argv[])
       slope_ener(iter,2) = ener_error;
       err_tmp_ener = ener_error;
       //Compute the slope
-      slope_grad(iter,0) = log(err_tmp_grad/err_grad) / log(h_tmp/h);
+      slope_grad(iter,0) = log(err_tmp_grad/err_H1) / log(h_tmp/h);
       slope_grad(iter,1) = h;
-      slope_grad(iter,2) = err_grad;
-      err_tmp_grad = err_grad;
+      slope_grad(iter,2) = err_H1;
+      err_tmp_grad = err_H1;
       h_tmp = h;
-  
-      //Save in .txt
-      //col1: elmentSize		  col2: L2 norm error	col3: ener norm error	
-      //col6: slope L2 error 	  col7: slope Ener error	col8: écart	
-      err_energy_flux <<h<<" "<<L2_error<<" "<<ener_error<<" "<<err_grad
-  		      <<" "<<slope_l2(iter,0)<<" "<<slope_ener(iter,0)<<" "<< pdc <<endl;
       iter++;
   
       //Save in Praview format
@@ -306,22 +268,32 @@ int main(int argc, char *argv[])
       //    largest number that gives a final mesh with no more than 5,000
       //    elements.
       mesh->UniformRefinement();
-    }
+    }  //end loop mesh
     //Affichage des normes et pentes.
     cout<<endl;
     cout<<"Erreur en norme:"<<endl;
-    for (int i=1; i<iter; i++)
-      cout << "L2: " << slope_l2(i,2)<<" Grad: "<<slope_grad(i,2) 
+    err_energy_flux << "Erreur en norme:"<<endl;
+    for (int i=1; i<iter; i++){
+      err_energy_flux << "L2: " << slope_l2(i,2)<<" H1: "<<slope_grad(i,2) 
+		      << " Energie: " << slope_ener(i,2)<<" Taille de maille= "
+		      <<slope_l2(i,1)<<endl;
+      cout << "L2: " << slope_l2(i,2)<<" H1: "<<slope_grad(i,2) 
   	   << " Energie: " << slope_ener(i,2)<<" Taille de maille= "
-  	   <<slope_l2(i,1)<<endl;
+  	   <<slope_l2(i,1)<<endl;}
+
     cout<<endl;
+    err_energy_flux<<endl;
     cout<<"Pente de convergence:"<<endl;
-    for (int i=1; i<iter; i++)
-      cout << "Pente L2: " << slope_l2(i,0)<<" Grad: "<<slope_grad(i,0) 
-  	   << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
+    err_energy_flux << "Pente de convergence:"<<endl;
+    for (int i=1; i<iter; i++){
+      err_energy_flux<<"Pente L2: " << slope_l2(i,0)<<" H1: "<<slope_grad(i,0) 
+		     << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
   	slope_l2(i,1)<<endl;
+      cout << "Pente L2: " << slope_l2(i,0)<<" H1: "<<slope_grad(i,0) 
+  	   << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
+  	slope_l2(i,1)<<endl;}
     cout<<endl;
-  }
+  }//end flux .txt
   return 0;
 }
 
@@ -344,9 +316,44 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
   grad(0,1) = -pull_force/(6.*E*I)*((6*L-3*x(0))*x(0) + (2+nu)*(y*y-D*D/4)
 				    + 2*y*y*(2+nu));
   grad(1,1) = pull_force*y*nu/(E*I)*(L-x(0));
-  grad(1,0) = pull_force/(6.*E*I)*(2*x(0)*(3*L-x(0))-x(0)*x(0)-3*nu*y*y+(4+5*nu)*D*D/4);
+  grad(1,0) = pull_force/(6.*E*I)*(2*x(0)*(3*L-x(0))-x(0)*x(0) -
+				   3*nu*y*y+(4+5*nu)*D*D/4);
 }
-
+//===================== Stress exacte =====================
+void Stress_exacte(const Vector &x, Vector &stress)
+{
+  double y = x(1)-D*0.5;
+  stress(0) = -pull_force*(L-x(0))*y/I;
+  stress(1) = 0.0;
+  stress(2) = pull_force/(2*I)*(D*D/4-y*y);
+}
+//===================== Strain exacte =====================
+void Strain_exacte(const Vector &x, Vector &strain)
+{
+  int dim = x.Size();
+  DenseMatrix grad(dim,dim);
+  double y = x(1)-D*0.5;
+  grad(0,0) = -pull_force*y/(E*I)*(L-x(0));
+  grad(0,1) = -pull_force/(6.*E*I)*((6*L-3*x(0))*x(0) + (2+nu)*(y*y-D*D/4)
+				    + 2*y*y*(2+nu));
+  grad(1,1) = pull_force*y*nu/(E*I)*(L-x(0));
+  grad(1,0) = pull_force/(6.*E*I)*(2*x(0)*(3*L-x(0))-x(0)*x(0) -
+				   3*nu*y*y+(4+5*nu)*D*D/4);
+  strain.SetSize(dim*(dim+1)/2);
+  strain(0)=grad(0,0);
+  strain(1)=grad(1,1);
+  if(dim==2){
+    strain(2)=0.5*(grad(1,0)+grad(0,1));
+  }
+  else if(dim==3){
+    strain(2)=grad(2,2);
+    strain(3)=0.5*(grad(1,0)+grad(0,1));
+    strain(4)=0.5*(grad(2,0)+grad(0,2));
+    strain(5)=0.5*(grad(2,1)+grad(1,2));
+  }
+  else{
+    cout<<"Dimention not suported"<<endl;}
+}
 //===================== Charge sur le bord droit =====================
 double F(const Vector &x)
 {
@@ -377,13 +384,11 @@ double ComputeH1Norm(GridFunction &x){
       const IntegrationRule *ir = &(IntRules.Get(fe->GetGeomType(), order));
       Trans = fes->GetElementTransformation(i);
       const int dof = fe->GetDof();
-      const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
 
       DenseMatrix dshape(dof, dim);
       DenseMatrix gh(dim, dim),gradh (dim, dim),grad(dim,dim);
       fes->GetElementVDofs(i, udofs);
       DenseMatrix loc_data(dof, dim);
-
       for (int s=0 ; s<dim ; s++)
 	{
 	  Array<int> udofs_tmp(dof);
@@ -410,7 +415,11 @@ double ComputeH1Norm(GridFunction &x){
 	  error += w * grad.FNorm2();
 	}			
     }
-  return (error < 0.0) ? -sqrt(-error) : sqrt(error);
+  if(error>0.0){
+    return sqrt(error);}
+  else{
+    cout<<"Negative H1 error"<<endl;
+    exit(0);}
 }
 
 //==============Erreur en Norme energie ===================
@@ -419,12 +428,9 @@ double ComputeEnergyNorm(GridFunction &x,
 {
   FiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
-  VectorFunctionCoefficient sol_exact_coef (dim, sol_exact);
-  GridFunction ex(fes);
-  ex.ProjectCoefficient(sol_exact_coef);
-  
-  ConstantCoefficient lambda_func(lambda);
-  ConstantCoefficient mu_func(mu);
+  const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+  VectorFunctionCoefficient Strain_exacte_coef(tdim,Strain_exacte);
+  VectorFunctionCoefficient Stress_exacte_coef(tdim,Stress_exacte);
   ElementTransformation *Trans;
 
   double energy = 0.0;
@@ -434,41 +440,42 @@ double ComputeEnergyNorm(GridFunction &x,
       const int order = 2*fe->GetOrder()+3; // <----------
       const IntegrationRule *ir = &IntRules.Get(fe->GetGeomType(), order);
       const int dof = fe->GetDof();
-      const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
       Trans = fes->GetElementTransformation(i);
       Vector stressh(tdim), strainh(tdim);	//approché
       Vector stress(tdim), strain(tdim);	//exacte
-      DenseMatrix C,Ch;
+      DenseMatrix Ch;
       for (int j = 0; j < ir->GetNPoints(); j++)
 	{
 	  const IntegrationPoint &ip = ir->IntPoint(j);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
 
+	  //======= strain vectors ========
+	  ComputeStress(*Trans, ip, x, i, strainh);//approx
+	  Strain_exacte_coef.Eval(strain,*Trans,ip);//exact
+
 	  //======= Stress vectors ========
-	  ComputeStress(*Trans, ip, x, i, stressh);
-	  ComputeStress(*Trans, ip, ex, i, stress);
-
-	  //======= Strain vectors ========
-	  Elasticy_mat(*Trans,ip,dim,lambda_func,mu_func,C);
 	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
-	  Ch.Mult(stressh,strainh);	//approx
-	  C.Mult(stress,strain);	//exacte
+	  Ch.Mult(strainh,stressh);			//approx
+	  Stress_exacte_coef.Eval(stress,*Trans,ip);//exact
 
-	  strainh -= strain;
-	  stressh -= stress;
+	  strain -= strainh;
+	  stress -= stressh;
 
 	  double pdc=0.0;
 	  for (int k = 0; k< dim; k++)
-	    pdc += strainh(k)*stressh(k);
-
+	    pdc += strain(k)*stress(k);
 	  for (int k = dim; k < dim*(dim+1)/2; k++)
-	    //pdc += 2*strainh(k)*stressh(k);
+	    pdc += 2*strain(k)*stress(k);
 
 	  energy += w * pdc;
 	}
     }
-  return (energy < 0.0) ? -sqrt(-energy) : sqrt(energy);
+  if(energy>0.0){
+    return sqrt(energy);}
+  else{
+    cout<<"Negative Energy error"<<endl;
+    exit(0);}
 }
 
 
@@ -494,15 +501,14 @@ void Elasticy_mat(ElementTransformation &T,const IntegrationPoint &ip,
 }
 
 //===================== Déformation =====================
-void ComputeStress(ElementTransformation &T,const IntegrationPoint &ip,
-		   GridFunction &x, int elem,  Vector &stress){
+void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
+		   GridFunction &x, int elem,  Vector &strain){
   FiniteElementSpace *fes = x.FESpace();
   Array<int> udofs;
   const FiniteElement *fe = fes->GetFE(elem);
   const int dof = fe->GetDof();
   const int dim = fe->GetDim();
   const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
-	
   DenseMatrix dshape(dof, dim);
   DenseMatrix gh(dim, dim),grad (dim, dim);
   fes->GetElementVDofs(elem, udofs);
@@ -525,28 +531,18 @@ void ComputeStress(ElementTransformation &T,const IntegrationPoint &ip,
   fe->CalcDShape(ip, dshape);
   MultAtB(loc_data, dshape, gh);
   Mult(gh, T.InverseJacobian(), grad);
-  stress(0)=grad(0,0);
-  stress(1)=grad(1,1);
+  strain(0)=grad(0,0);
+  strain(1)=grad(1,1);
   if(dim==2){
     stress(2)=0.5*(grad(1,0)+grad(0,1));
   }
   else if(dim==3){
-    stress(2)=grad(2,2);
-    stress(3)=0.5*(grad(1,0)+grad(0,1));
-    stress(4)=0.5*(grad(2,0)+grad(0,2));
-    stress(5)=0.5*(grad(2,1)+grad(1,2));
+    strain(2)=grad(2,2);
+    strain(3)=0.5*(grad(1,0)+grad(0,1));
+    strain(4)=0.5*(grad(2,0)+grad(0,2));
+    strain(5)=0.5*(grad(2,1)+grad(1,2));
   }
   else{
     cout<<"dimention not suported"<<endl;}
-}
-
-// Definition of exact solution
-double Norm_Energie_Exact()
-{
-  double pdc;
-  pdc = pow(pull_force/I,2) * ((lambda+2.*mu)/(mu*(4.*lambda +mu))*L*L*L*D*D*D/36. 
-			       - D*D*D*L/(12.*mu));
-  return (pdc < 0.0) ? -sqrt(-pdc) : sqrt(pdc);
-
 }
 

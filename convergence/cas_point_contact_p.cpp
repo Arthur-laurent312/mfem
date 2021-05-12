@@ -1,8 +1,11 @@
-// compile with: make cas_point_contact
+// Compile with: make cas_point_contact_p
 //
-//cas test avec solution analytique. plaque 2d avec point de contact en (0,0).
-//calcul de la déformation en élasticité linéaire. 
-//version parallèle
+//Version parallèle
+//Cas test avec solution analytique. Plaque 2D avec point de contact
+//d'intensité Force en (0,0).
+//Calcul de la déformation en élasticité linéaire. 
+
+//Calcul des erreurs en normes H1 L2 et énergie
 
 //ref: http://e6.ijs.si/medusa/wiki/index.php/point_contact
 
@@ -13,29 +16,28 @@
 using namespace std;
 using namespace mfem;
 
-static constexpr double force = -1.;
+static constexpr double Force = -1.;
 static constexpr double e = 1000.;	//module de young
 static constexpr double nu = 0.25;	//coef de poisson
 static constexpr double lambda = e*nu/((1.+nu)*(1.-2.*nu));
 static constexpr double mu = e/(2.*(1.+nu));	//coef de lamé
-
+//Solution exacte
 void sol_exact(const Vector &, Vector &);
-double ux_exact(const Vector &);
-double uy_exact(const Vector &);
-void grad_exact(const Vector &, DenseMatrix &);
-void gradexact_x(const Vector &, Vector &);
-void gradexact_y(const Vector &, Vector &);
+void Grad_Exact(const Vector &, DenseMatrix &);
+void Stress_excat(const Vector &, Vector &);
+void Strain_exacte(const Vector &, Vector &);
 
+//Erreur en norme energie
 double computeenergynorm(ParGridFunction &,
-			 Coefficient &, Coefficient &);
+			   Coefficient &, Coefficient &);
 
 void elasticy_mat(ElementTransformation &,const IntegrationPoint &, 
 		  int, Coefficient &, Coefficient &, DenseMatrix &);
-
-double computeh1norm(ParGridFunction &);
-
-void computestress(ElementTransformation &,const IntegrationPoint &,
+void computestrain(ElementTransformation &,const IntegrationPoint &,
 		   ParGridFunction &, int,  Vector &);
+
+//Erreur en norme H1
+double computeh1norm(ParGridFunction &);
 
 int main(int argc, char *argv[])
 {
@@ -148,9 +150,9 @@ int main(int argc, char *argv[])
   fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
   // Set up the linear form b(.) which corresponds to the right-hand side of
   //    the fem linear system. in this case, b_i equals the boundary integral
-  //    of f*phi_i where f represents a "pull down" force on the neumann part
+  //    of f*phi_i where f represents a "pull down" Force on the neumann part
   //    of the boundary and phi_i are the basis Functions in the finite element
-  //    fespace. the force is defined by the VectorArrayCoefficient object f,
+  //    fespace. the Force is defined by the VectorArrayCoefficient object f,
   //    which is a Vector of Coefficient objects. the fact that f is non-zero
   //    on boundary attribute 2 is indicated by the use of piece-wise Constants
   //    Coefficient for its last component.
@@ -228,7 +230,6 @@ int main(int argc, char *argv[])
   // 12. recover the solution as a finite element Grid Function.
   a->RecoverFEMSolution(X, *b, x);
 
-
   // 13. for non-nurbs meshes, make the mesh curved based on the finite element
   //     space. this means that we define the mesh elements through a fespace
   //     based transformation of the reference element. this allows us to save
@@ -242,10 +243,11 @@ int main(int argc, char *argv[])
     }
 
   // compute errors
+  double h1_error = computeh1norm(x);
   double ener_error = computeenergynorm(x, lambda_func, mu_func);
   VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
   double l2_error = x.ComputeL2Error(sol_exact_coef);
-  double h1_error = computeh1norm(x);
+
   double h = mesh->GetElementSize(1);
   if (myid == 0)
     {
@@ -295,22 +297,8 @@ void sol_exact(const Vector &x, Vector &u)
 {
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
-  u(0) = -force/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
-  u(1) = -force/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - 
- 			   (lambda+2*mu)*log(r2)/(lambda+mu));
-}
-double ux_exact(const Vector &x)
-{
-  double r2 = x(1)*x(1)+x(0)*x(0);
-  double pi = M_PI;
-  return -force/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
-}
-
-double uy_exact(const Vector &x)
-{
-  double r2 = x(1)*x(1)+x(0)*x(0);
-  double pi = M_PI;
-  return -force/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - 
+  u(0) = -Force/(4*pi*mu)*(2*x(0)*x(1)/r2 + 2*mu/(lambda+mu)*atan2(x(1),x(0)));
+  u(1) = -Force/(4*pi*mu)*((x(1)*x(1)-x(0)*x(0))/r2 - 
  			   (lambda+2*mu)*log(r2)/(lambda+mu));
 }
 //===================== grad exacte =====================
@@ -318,29 +306,54 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
 {
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
-  grad(0,0) = -force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
-  grad(0,1) = -force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
-  grad(1,1) = -force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
+  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
+  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+  grad(1,1) = -Force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
  				(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
-  grad(1,0) = -force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
+  grad(1,0) = -Force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
  				(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
 }
-void gradexact_x(const Vector &x, Vector &grad)
+//===================== Stress exacte =====================
+void Stress_exacte(const Vector &x, Vector &stress)
 {
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
-  grad(0) = -force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2)-2*mu/(lambda+mu)*x(1)/r2);
-  grad(1) = -force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 2*mu/(lambda+mu)*x(0)/r2);
+  stress(0) = 2*Force/pi*x(0)*x(0)*x(1)/(r2*r2);
+  stress(1) = 2*Force/pi*x(1)*x(1)*x(1)/(r2*r2);
+  stress(2) = 2*Force/pi*x(0)*x(1)*x(1)/(r2*r2);
 }
-void gradexact_y(const Vector &x, Vector &grad)
+//===================== Strain exacte =====================
+void Strain_exacte(const Vector &x, Vector &strain)
 {
+  int dim = x.Size();
+  DenseMatrix grad(dim,dim);
   double r2 = x(1)*x(1)+x(0)*x(0);
   double pi = M_PI;
-  grad(1) = -force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
- 			      (lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
-  grad(0) = -force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
- 			      (lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+  grad(0,0) = -Force/(4*pi*mu)*(2*x(1)*(x(1)*x(1)-x(0)*x(0))/(r2*r2) -
+				2*mu/(lambda+mu)*x(1)/r2);
+  grad(0,1) = -Force/(4*pi*mu)*(2*x(0)*(x(0)*x(0)-x(1)*x(1))/(r2*r2) + 
+				2*mu/(lambda+mu)*x(0)/r2);
+  grad(1,1) = -Force/(4*pi*mu)*(4*x(1)*x(0)*x(0)/(r2*r2) - 
+				(lambda+2*mu)/(lambda+mu)*2*x(1)/r2);
+  grad(1,0) = -Force/(4*pi*mu)*(-4*x(1)*x(1)*x(0)/(r2*r2) - 
+				(lambda+2*mu)/(lambda+mu)*2*x(0)/r2);
+  strain.SetSize(dim*(dim+1)/2);
+  strain(0)=grad(0,0);
+  strain(1)=grad(1,1);
+  if(dim==2){
+    strain(2)=0.5*(grad(1,0)+grad(0,1));
+  }
+  else if(dim==3){
+    strain(2)=grad(2,2);
+    strain(3)=0.5*(grad(1,0)+grad(0,1));
+    strain(4)=0.5*(grad(2,0)+grad(0,2));
+    strain(5)=0.5*(grad(2,1)+grad(1,2));
+  }
+  else{
+    cout<<"Dimention not suported"<<endl;}
 }
+
+
 //===================== erreur en norme h1 =====================
 double computeh1norm(ParGridFunction &x){
   ParFiniteElementSpace *fes = x.ParFESpace();
@@ -390,7 +403,11 @@ double computeh1norm(ParGridFunction &x){
  	  error += w * grad.FNorm2();
  	}			
     }
-  return (error < 0.0) ? -sqrt(-error) : sqrt(error);
+  if(error>0.0){
+    return sqrt(error);}
+  else{
+	cout<<"Negative H1 error"<<endl;
+    exit(0);}
 }
 
 //==============erreur en norme energie ===================
@@ -399,55 +416,55 @@ double computeenergynorm(ParGridFunction &x,
 {
   ParFiniteElementSpace *fes = x.ParFESpace();
   int dim = fes->GetMesh()->SpaceDimension();
-  VectorFunctionCoefficient sol_exact_coef (dim, sol_exact);
-  ParGridFunction ex(fes);
-  ex.ProjectCoefficient(sol_exact_coef);
- 
-  ConstantCoefficient lambda_func(lambda);
-  ConstantCoefficient mu_func(mu);
-  ElementTransformation *trans;
-  double energy_local = 0.0, energy_global;
+  const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+  VectorFunctionCoefficient Strain_exacte_coef(tdim,Strain_exacte);
+  ElementTransformation *Trans;
+
+  double energy_local = 0.0, energy_global = 0.0;
   for (int i = 0; i < fes->GetNE() ; i++)
     {
       const FiniteElement *fe = fes->GetFE(i);
       const int order = 2*fe->GetOrder()+3; // <----------
       const IntegrationRule *ir = &IntRules.Get(fe->GetGeomType(), order);
       const int dof = fe->GetDof();
-      const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
-      trans = fes->GetElementTransformation(i);
+      Trans = fes->GetElementTransformation(i);
       Vector stressh(tdim), strainh(tdim);	//approché
       Vector stress(tdim), strain(tdim);	//exacte
-      DenseMatrix c,ch;
+      DenseMatrix Ch;
       for (int j = 0; j < ir->GetNPoints(); j++)
- 	{
- 	  const IntegrationPoint &ip = ir->IntPoint(j);
- 	  trans->SetIntPoint(&ip);
- 	  double w = trans->Weight() * ip.weight;
- 	  computestress(*trans, ip, x, i, stressh);
- 	  computestress(*trans, ip, ex, i, stress);
+	{
+	  const IntegrationPoint &ip = ir->IntPoint(j);
+	  Trans->SetIntPoint(&ip);
+	  double w = Trans->Weight() * ip.weight;
 
- 	  //======= stress Vectors ========
- 	  elasticy_mat(*trans,ip,dim,lambda_func,mu_func,c);
- 	  elasticy_mat(*trans,ip,dim,lambdah,muh,ch);
+	  //======= strain vectors ========
+	  computestrain(*Trans, ip, x, i, strainh);
+	  Strain_exacte_coef.Eval(strain,*Trans,ip);
+	  //======= Stress vectors ========
+	  elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
+	  Ch.Mult(strainh,stressh);	//approx
+	  Ch.Mult(strain,stress);	//exacte
 
- 	  ch.Mult(stressh,strainh);	//approx
- 	  c.Mult(stress,strain);	//exacte
+	  strain -= strainh;
+	  stress -= stressh;
 
- 	  strainh -= strain;
- 	  stressh -= stress;
+	  double pdc=0.0;
+	  for (int k = 0; k< dim; k++)
+	    pdc += strain(k)*stress(k);
 
- 	  double pdc=0.0;
- 	  for (int k = 0; k< dim; k++)
- 	    pdc += strainh(k)*stressh(k);
- 	  for (int k = dim; k < dim*(dim+1)/2; k++)
- 	    pdc += 2*strainh(k)*stressh(k);
+	  for (int k = dim; k < dim*(dim+1)/2; k++)
+	    pdc += 2*strain(k)*stress(k);
 
- 	  energy_local += w * pdc;
+	  energy_local += w * pdc;
  	}
     }
   MPI_Reduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM, 0,
  	     MPI_COMM_WORLD);
-  return (energy_global < 0.0) ? -sqrt(-energy_global) : sqrt(energy_global);
+  if(energy_global>0.0){
+    return sqrt(energy_global);}
+  else{
+	return 0; //cout<<"Negative Energy error"<<endl;
+    }
 }
 
 //===================== matrice élasticité =====================
@@ -470,7 +487,7 @@ void elasticy_mat(ElementTransformation &t,const IntegrationPoint &ip,
     c(k,k) = m;
 }
 //===================== déformation =====================
-void computestress(ElementTransformation &t,const IntegrationPoint &ip,
+void computestrain(ElementTransformation &t,const IntegrationPoint &ip,
  		   ParGridFunction &x, int elem,  Vector &stress){
   ParFiniteElementSpace *fes = x.ParFESpace();
   Array<int> udofs;
