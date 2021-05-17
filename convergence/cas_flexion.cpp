@@ -38,15 +38,17 @@ void sol_exact(const Vector &, Vector &);
 void grad_exact(const Vector &, DenseMatrix &);
 void Stress_exacte(const Vector &, Vector &);
 void Strain_exacte(const Vector &, Vector &);
-
+void Mat_zero(const Vector &, DenseMatrix &);
+void Vec_zero(const Vector &, Vector &);
 //Chargement
 double F(const Vector &);
 
 //Erreur en norme H1
-double ComputeH1Norm(GridFunction &);
+double ComputeH1Norm(GridFunction &, MatrixFunctionCoefficient &);
 //Erreur en norme energy
 double ComputeEnergyNorm(GridFunction &,
-			 Coefficient &, Coefficient &);
+			 Coefficient &, Coefficient &,
+			VectorFunctionCoefficient &, VectorFunctionCoefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int,
 		  Coefficient &, Coefficient &, DenseMatrix &);
@@ -90,7 +92,7 @@ int main(int argc, char *argv[])
   slope_l2.SetSize(rep-1,3);
   slope_grad.SetSize(rep-1,3);
 
-  string const err_energy("err_flexion_ordre2.txt");
+  string const err_energy("err_flexion_ordre1.txt");
   ofstream err_energy_flux(err_energy.c_str());
   if (!err_energy_flux.is_open()) {
     cout << "Problem in openning file" << endl;
@@ -209,16 +211,28 @@ int main(int argc, char *argv[])
       // 12. Recover the solution as a finite element grid function.
       a->RecoverFEMSolution(X, *b, x);
 
-      // Compute error
-      double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func);
-      double err_H1 = ComputeH1Norm(x);
+      // Compute norms of error
+    int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+	VectorFunctionCoefficient Strain_exacte_coef(tdim,Strain_exacte);
+	VectorFunctionCoefficient Stress_exacte_coef(tdim,Stress_exacte);
+      double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func,
+											Strain_exacte_coef, Stress_exacte_coef);
+MatrixFunctionCoefficient grad_exact_coef(dim, grad_exact);
+      double err_H1 = ComputeH1Norm(x,grad_exact_coef);
       VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
       double L2_error = x.ComputeL2Error(sol_exact_coef);
   	
       cout << "\nL2 norm of error: " << L2_error << endl;
       cout << "Energy norm of error: " << ener_error << endl;
-      cout << "H1 norm of error: " << err_H1 << endl << endl;
-  
+      cout << "H1 norm of error: " << err_H1 << endl;
+
+  		//Compute norme H1, ener
+	VectorFunctionCoefficient Vec_zero_coef(tdim,Vec_zero);
+      double ener = ComputeEnergyNorm(x, lambda_func, mu_func,
+											Vec_zero_coef, Vec_zero_coef);
+	MatrixFunctionCoefficient Mat_zero_coef(dim,Mat_zero);
+      double H1 = ComputeH1Norm(x,Mat_zero_coef);
+	cout << "Rapport norme energie/H1: "<< ener/H1 <<endl<<endl;
       double h = mesh->GetElementSize(0);
       //Compute the slope
       slope_l2(iter,0) = log(err_tmp_l2/L2_error) / log(h_tmp/h);
@@ -232,7 +246,7 @@ int main(int argc, char *argv[])
       err_tmp_ener = ener_error;
       //Compute the slope
       slope_grad(iter,0) = log(err_tmp_grad/err_H1) / log(h_tmp/h);
-      slope_grad(iter,1) = h;
+      slope_grad(iter,1) = ener/H1;
       slope_grad(iter,2) = err_H1;
       err_tmp_grad = err_H1;
       h_tmp = h;
@@ -288,10 +302,10 @@ int main(int argc, char *argv[])
     for (int i=1; i<iter; i++){
       err_energy_flux<<"Pente L2: " << slope_l2(i,0)<<" H1: "<<slope_grad(i,0) 
 		     << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
-  	slope_l2(i,1)<<endl;
+  	slope_l2(i,1)<<" Rapport energie/H1: "<<slope_grad(i,1)<<endl;
       cout << "Pente L2: " << slope_l2(i,0)<<" H1: "<<slope_grad(i,0) 
   	   << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
-  	slope_l2(i,1)<<endl;}
+  	slope_l2(i,1)<<" Rapport energie/H1: "<<slope_grad(i,1) <<endl;}
     cout<<endl;
   }//end flux .txt
   return 0;
@@ -319,6 +333,21 @@ void grad_exact(const Vector &x, DenseMatrix &grad)
   grad(1,0) = pull_force/(6.*E*I)*(2*x(0)*(3*L-x(0))-x(0)*x(0) -
 				   3*nu*y*y+(4+5*nu)*D*D/4);
 }
+
+void Mat_zero(const Vector &x, DenseMatrix &zero)
+{
+  zero(0,0) = 0.;
+  zero(0,1) = 0.;
+  zero(1,1) = 0.;
+  zero(1,0) = 0.;
+}
+void Vec_zero(const Vector &x, Vector &zero)
+{
+  zero(0) = 0.;
+  zero(1) = 0.;
+  zero(2) = 0.;
+}
+
 //===================== Stress exacte =====================
 void Stress_exacte(const Vector &x, Vector &stress)
 {
@@ -368,11 +397,10 @@ double F(const Vector &x)
 }
 
 //===================== Erreur en norme H1 =====================
-double ComputeH1Norm(GridFunction &x){
+double ComputeH1Norm(GridFunction &x, MatrixFunctionCoefficient &grad_exact_coef){
   FiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
 
-  MatrixFunctionCoefficient grad_exact_coef (dim, grad_exact);
   ElementTransformation *Trans;
   DenseMatrix grad, gradh;
   double error = 0.0;
@@ -423,14 +451,13 @@ double ComputeH1Norm(GridFunction &x){
 }
 
 //==============Erreur en Norme energie ===================
-double ComputeEnergyNorm(GridFunction &x,
-			 Coefficient &lambdah, Coefficient &muh)
+double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh,
+					 VectorFunctionCoefficient &Strain_exacte_coef,
+					VectorFunctionCoefficient &Stress_exacte_coef)
 {
   FiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
   const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
-  VectorFunctionCoefficient Strain_exacte_coef(tdim,Strain_exacte);
-  VectorFunctionCoefficient Stress_exacte_coef(tdim,Stress_exacte);
   ElementTransformation *Trans;
 
   double energy = 0.0;
