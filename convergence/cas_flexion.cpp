@@ -20,16 +20,16 @@ using namespace std;
 using namespace mfem;
 
 //GL: commenter ces constantes 
-static constexpr double pull_force = 1.;
-static constexpr double L = 8.0;
-static constexpr double D =1.0;
-static constexpr double E_old = 1000.;
-static constexpr double nu_old = 0.25;
-static constexpr double I = D*D*D*D/12.;
+static constexpr double pull_force = -2;	//Force en bout de poutre
+static constexpr double L = 8.0;	//Longueur de la poutre
+static constexpr double D = 2.0;	//Largueur de la poutre
+static constexpr double E_old = 1000.;	//Module de Young
+static constexpr double nu_old = 0.25;	//Coef de poisson
+static constexpr double I = D*D*D*D/12.;	//Moment d'inertie
 static constexpr double lambda_old  = E_old*nu_old/((1.+nu_old)*(1.-2.*nu_old));
-static constexpr double mu_old = E_old/(2.*(1.+nu_old));
-static constexpr double E = E_old/(1.-nu_old*nu_old);
-static constexpr double nu = nu_old/(1.-nu_old);		//Passage en plane stress
+static constexpr double mu_old = E_old/(2.*(1.+nu_old));	//coef de Lamé
+static constexpr double E = E_old/(1.-nu_old*nu_old);	//Passage en plane stress
+static constexpr double nu = nu_old/(1.-nu_old);
 static constexpr double lambda = E*nu/((1.+nu)*(1.-2.*nu));
 static constexpr double mu = E/(2.*(1.+nu));
 
@@ -37,8 +37,8 @@ static constexpr double mu = E/(2.*(1.+nu));
 void sol_exact(const Vector &, Vector &);
 void grad_exact(const Vector &, DenseMatrix &);
 void Stress_exacte(const Vector &, Vector &);
-void Strain_(DenseMatrix &, Vector &)
-  void Mat_zero(const Vector &, DenseMatrix &);
+void Strain_(DenseMatrix &, Vector &);
+void Mat_zero(const Vector &, DenseMatrix &);
 void Vec_zero(const Vector &, Vector &);
 double ux_exact(const Vector &);
 double uy_exact(const Vector &);
@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
   slope_grad.SetSize(rep-1,3);
   slope_gradbis.SetSize(rep-1,3);
 
-  string const err_energy("err_flexion_ordretest1.txt");
+  string const err_energy("err_flexion_ordretest.txt");
   ofstream err_energy_flux(err_energy.c_str());
   if (!err_energy_flux.is_open()) {
     cout << "Problem in openning file" << endl;
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
       Array<int> ess_tdof_list;
       Array<int> ess_bdr(mesh->bdr_attributes.Max());
       ess_bdr = 0;
-      ess_bdr[0] =1;
+      ess_bdr[0] = 1;
       fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
   
       // 7. Set up the linear form b(.) which corresponds to the right-hand side of
@@ -266,6 +266,13 @@ int main(int argc, char *argv[])
       iter++;
   
       //Save in Praview format
+      VectorFunctionCoefficient cgux_exact(2, gradux_exact);
+      VectorFunctionCoefficient cguy_exact(2, graduy_exact);
+      GridFunction gradx(fespace);
+      gradx.ProjectCoefficient(cgux_exact);
+      GridFunction grady(fespace);
+      grady.ProjectCoefficient(cguy_exact);
+
       GridFunction ex(fespace);
       ex.ProjectCoefficient(sol_exact_coef);
       GridFunction diff(fespace);
@@ -282,6 +289,8 @@ int main(int argc, char *argv[])
       paraview_dc.RegisterField("numerical_solution",&x);
       paraview_dc.RegisterField("diff-exact_solution",&diff);
       paraview_dc.RegisterField("exact_solution",&ex);
+      paraview_dc.RegisterField("gradx",&gradx);
+      paraview_dc.RegisterField("grady",&grady);
       paraview_dc.Save();	
   
       delete a;
@@ -341,7 +350,7 @@ int main(int argc, char *argv[])
 //===================== Solution exacte =====================
 void sol_exact(const Vector &x, Vector &u)
 {
-  double y = x(1)-D*0.5;
+  double y = x(1);  
   u(0) = pull_force*y/(6.*E*I) * ((6.*L-3.*x(0))*x(0) + (2.+nu)*(y*y - D*D/4.));
   u(1) = -pull_force/(6.*E*I) * (3.*nu*y*y*(L-x(0)) + (3.*L-x(0))*x(0)*x(0)+ 
 				 (4.+5.*nu)*D*D*x(0)/4.);
@@ -349,8 +358,7 @@ void sol_exact(const Vector &x, Vector &u)
 //===================== Gradient exacte =====================
 void grad_exact(const Vector &x, DenseMatrix &grad)
 {
-  double y = x(1)-D*0.5;
-
+  double y = x(1); 
   grad(0,0) = pull_force*y/(E*I)*(L-x(0));
   grad(0,1) = pull_force/(6.*E*I)*((6.*L-3.*x(0))*x(0) + (2.+nu)*(3*y*y-D*D/4.));
   grad(1,1) = -pull_force*y*nu/(E*I)*(L-x(0));
@@ -407,7 +415,7 @@ void Vec_zero(const Vector &x, Vector &zero)
 //===================== Stress exacte =====================
 void Stress_exacte(const Vector &x, Vector &stress)
 {
-  double y = x(1)-D*0.5;
+  double y = x(1); 
   stress(0) = pull_force*(L-x(0))*y/I;
   stress(1) = 0.0;
   stress(2) = -pull_force/(2*I)*(D*D/4-y*y);
@@ -421,7 +429,6 @@ void Strain_(DenseMatrix &grad, Vector &strain)
   strain(1)=grad(1,1);
   if(dim==2){
     strain(2)=0.5*(grad(1,0)+grad(0,1));
-    //  strain(2)=0.5*grad(1,0);
   }
   else if(dim==3){
     strain(2)=grad(2,2);
@@ -436,8 +443,9 @@ void Strain_(DenseMatrix &grad, Vector &strain)
 double F(const Vector &x)
 {
   double force;
+  double y = x(1); 
   if(x(0) >= 8.-1.e-6){
-    force = -pull_force/(2.*I)*(pow(D*0.5,2) - pow((x(1)-D*0.5),2));
+    force = -pull_force/(2.*I)*(pow(D*0.5,2) - y*y);
   } else {
     force = 0.;
   }
@@ -573,7 +581,6 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 	    pdc += strainh(k)*strainh(k);
 	  for (int k = dim; k < dim*(dim+1)/2; k++)
 	    pdc += 2*strainh(k)*strainh(k); 
-	  //pdc += 2*strainh(k)*strainh(k); 
 
 	  energy += w * pdc;
 	}
