@@ -135,9 +135,10 @@ int main(int argc, char *argv[])
       // List of True DoFs : Define (here) Dirichlet conditions
       Array<int> ess_tdof_list;
       Array<int> ess_bdr(mesh->bdr_attributes.Max());
-      ess_bdr = 0;
-      ess_bdr[0] = 1;
-      fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
+      ess_bdr = 1;
+      ess_bdr[3] = 0;
+	  ess_bdr[2] = 0;
+	  fespace->GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
   
       // 7. Set up the linear form b(.) which corresponds to the right-hand side of
       //    the FEM linear system. In this case, b_i equals the boundary integral
@@ -159,8 +160,7 @@ int main(int argc, char *argv[])
       LinearForm *b = new LinearForm(fespace);
       b->AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(f));
       cout << "r.h.s. ... " << flush;
-  
-  
+
       // 8. Define the solution vector x as a finite element grid function
       //    corresponding to fespace. Initialize x with initial guess of zero,
       //    which satisfies the boundary conditions.
@@ -444,7 +444,7 @@ double F(const Vector &x)
 {
   double force;
   double y = x(1); 
-  if(x(0) >= 8.-1.e-6){
+  if(x(0) >= L-1.e-6){
     force = -pull_force/(2.*I)*(pow(D*0.5,2) - y*y);
   } else {
     force = 0.;
