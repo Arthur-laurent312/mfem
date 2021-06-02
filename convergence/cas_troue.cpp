@@ -13,16 +13,19 @@
 using namespace std;
 using namespace mfem;
 
-static constexpr double R2 = 0.25*0.25;	//Rayon troue au carré
-static constexpr double Sigmainf = 10.0;	//contrainte à l'infinie
-static constexpr double E = 1000.;	//Module de Young
-static constexpr double nu = 0.25;	//Coef de poisson
+static constexpr double R2 = 0.02*0.02;	//Rayon troue au carré
+static constexpr double Sigmainf = 100.;	//contrainte à l'infinie
+static constexpr double E = 21e10;	//Module de Young
+static constexpr double nu = 0.3;	//Coef de poisson
 static constexpr double lambda = E*nu/((1.+nu)*(1.-2.*nu)); //Coef de lamé
 static constexpr double mu = E/(2.*(1.+nu));
+static constexpr double cx = 0.1;	//dimension du domaine
+static constexpr double cy = 0.05;
 
 //Solution exacte
 void conversion(const double, const double , double &, double &);
 void Stress_exacte(const Vector &, Vector &);
+void Stress_exacte02(const Vector &, Vector &);
 void Strain_(DenseMatrix &, Vector &);
 
 //Chargement
@@ -38,8 +41,35 @@ void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int,
 void ComputeStrain(ElementTransformation &,const IntegrationPoint &,
 		   GridFunction &, int,  Vector &);
 
-void SaveStrain(GridFunction &,Coefficient &, Coefficient &,
+void SaveStress(GridFunction &,Coefficient &, Coefficient &,
 		Mesh &, QuadratureFunction );
+class DiagCoefficient : public Coefficient
+{
+protected:
+  Coefficient &lambda, &mu;
+  GridFunction *u; // displacement
+  int si, sj; // component to evaluate, 0 <= si,sj < dim
+
+  DenseMatrix grad; // auxiliary matrix, used in Eval
+
+public:
+  DiagCoefficient(Coefficient &lambda_, Coefficient &mu_)
+    : lambda(lambda_), mu(mu_), u(NULL), si(0), sj(0) { }
+
+  void SetDisplacement(GridFunction &u_) { u = &u_; }
+
+  virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip) = 0;
+};
+
+class StressCoefficient : public DiagCoefficient
+{
+public:
+  using DiagCoefficient::DiagCoefficient;
+  void SetComponent(int i, int j) { si = i; sj = j; }
+  virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip);
+
+};
+
 int main(int argc, char *argv[])
 {
   DenseMatrix slope_ener;
@@ -92,7 +122,7 @@ int main(int argc, char *argv[])
     FiniteElementCollection *fec;
     FiniteElementSpace *fespace;
     fec = new H1_FECollection(order, dim);
-    fespace = new FiniteElementSpace(mesh, fec, dim);
+    fespace = new FiniteElementSpace(mesh, fec, dim, Ordering::byVDIM);
     cout << "Numbers of elements: " << mesh->GetNE() <<endl;
     cout << "Number of finite element unknowns: " << fespace->GetTrueVSize()
 	 << endl << "Assembling: " << flush;
@@ -104,20 +134,13 @@ int main(int argc, char *argv[])
   
     // List of True DoFs : Define (here) Dirichlet conditions
     Array<int> ess_tdof_list, tmp_tdof, ess_bdr(mesh->bdr_attributes.Max());
-    cout << "bdr_attributes.Max()" << std::endl;
     ess_bdr = 0;
-    // ess_bdr[0] refers to dof on the "xz0" plane
     ess_bdr[1] = 1;
-    // grab all dof on "xz0" and put them into tmp_dof.
-    // last parameter is 1 to set "y" direction for dirichlet condition.
     fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
     // ess_tof_list accumulates all needed dof
     ess_tdof_list.Append(tmp_tdof);
-
     ess_bdr = 0;
-    // ess_bdr[1] refer to dof on the "xy0" plane
     ess_bdr[3] = 1;
-    // last parameter is 2 to set "z" direction for dirichlet condition.
     fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 0);
     // ess_tof_list accumulates all needed dof
     ess_tdof_list.Append(tmp_tdof);
@@ -131,16 +154,15 @@ int main(int argc, char *argv[])
     //    The fact that f is non-zero
     //    on boundary attribute 2 is indicated by the use of piece-wise constants
     //    coefficient for its last component.
-  
-    VectorArrayCoefficient f(dim);
-    for (int i = 0; i < dim-1; i++)
-      {
-	f.Set(i, new ConstantCoefficient(0.0));
-      }
-    f.Set(dim-1, new FunctionCoefficient(F));
-  
+    // Add non zero Neumann conditions
+    //Boundary conditions markers
+    Array<int> bdr_attr_marker_neu(mesh->bdr_attributes.Max());
+    // values for neumann boundary conditions are set within boundary function
+    FunctionCoefficient Neumann_cond(F);
+    bdr_attr_marker_neu = 0;
+    bdr_attr_marker_neu[0] = 1;
     LinearForm *b = new LinearForm(fespace);
-    b->AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(f));
+    b->AddBoundaryIntegrator(new BoundaryLFIntegrator(Neumann_cond),bdr_attr_marker_neu);
     cout << "r.h.s. ... " << flush;
 
     // 8. Define the solution vector x as a finite element grid function
@@ -163,9 +185,7 @@ int main(int argc, char *argv[])
     //     applying any necessary transformations such as: eliminating boundary
     //     conditions, applying conforming constraints for non-conforming AMR,
     //     static condensation, etc.
-  
     cout << "matrix ... " << flush;
-  
     a->Assemble();
     b->Assemble();
   
@@ -173,9 +193,8 @@ int main(int argc, char *argv[])
     Vector B, X;
   
     a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);  
-    cout << "done." << endl;
-  
-    cout << "Size of linear system: " << A.Height() << endl;
+    cout << "done." << endl << "Size of linear system: " <<
+     A.Height() << endl;
   
     if(iterative){
       GSSmoother M(A);
@@ -211,33 +230,54 @@ int main(int argc, char *argv[])
     h_tmp = h;
     iter++;
     //Save in Praview format
-    QuadratureFunction Strain;
-    SaveStrain(x, lambda_func, mu_func, *mesh, Strain);
+    //QuadratureFunction Stress;
+    //SaveStress(x, lambda_func, mu_func, *mesh, Stress);
     if (!mesh->NURBSext)
       {
         mesh->SetNodalFESpace(fespace);
       }
     GridFunction *nodes = mesh->GetNodes();
     *nodes += x;
-    x *= -1;
+    FiniteElementSpace *fieldspace;
+    fieldspace = new FiniteElementSpace(mesh, fec, 1, Ordering::byVDIM);
     ParaViewDataCollection paraview_dc("Troue", mesh);
     paraview_dc.SetPrefixPath("ParaView");
+    std::string letters = "xyz";
+    Array<GridFunction *> stressGrid(dim*(dim+1)/2);
+    StressCoefficient stress_c(lambda_func, mu_func);
+    stress_c.SetDisplacement(x);
+    int c = 0;
+    for (int si = 0; si < dim; si++)
+      {
+	for (int sj = si; sj < dim; sj++)
+	  {
+	    std::string stressname= "S" + letters.substr(si,1) +
+	      letters.substr(sj,1);
+	    stressGrid[c] = new GridFunction(fieldspace);
+	    stress_c.SetComponent(si, sj);
+	    stressGrid[c]->ProjectDiscCoefficient(stress_c, GridFunction::ARITHMETIC);
+	    paraview_dc.RegisterField(stressname,stressGrid[c]);
+	  }
+      }
+    //Stress exacte
+    FiniteElementSpace *fieldspace_exacte;
+    fieldspace_exacte = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
+    GridFunction stress_exacte(fieldspace_exacte);
+    stress_exacte.ProjectCoefficient(Stress_exacte_coef);
     paraview_dc.SetLevelsOfDetail(order+1);
     paraview_dc.SetCycle(0);
     paraview_dc.SetDataFormat(VTKFormat::BINARY);
     paraview_dc.SetHighOrderOutput(true);
     paraview_dc.SetTime(0.0); // set the time
-    paraview_dc.RegisterField("numerical_solution",&x);  
-    //paraview_dc.RegisterQField("Contrainte",&Strain);
-    paraview_dc.Save();	
-    /*
-      delete a;
-      delete b;
-      if (fec) {
+    paraview_dc.RegisterField("numerical_solution",&x);
+    paraview_dc.RegisterField("Stress exacte",&stress_exacte);
+    paraview_dc.Save();
+    if (fec) {
       delete fespace;
       delete fec;
-      }*/
+    }
   }//Fin de boucle maillage
+
   //Affichage des normes et pentes.
   cout<<endl;
   cout<<"Erreur en norme:"<<endl;
@@ -254,25 +294,9 @@ int main(int argc, char *argv[])
 }
 void conversion(const double x, const double y , double &r, double &theta)
 {
-  double x1=x-0.5;
-  double y1=y-0.5;
+  double x1=x-cx, y1=y-cy;
   r = sqrt(x1*x1 + y1*y1);
-  //theta = atan2(y1,x1);
-  if ( x > 0 && y > 0)
-    theta = atan(y/x);
-  if ( x > 0 && y == 0)
-    theta = 2.0*M_PI;
-  if ( x > 0 && y < 0)
-    theta = atan(y/x) + 2*M_PI;
-  if ( x < 0)
-    theta = atan(y/x) + M_PI;
-  if ( x == 0 && y > 0)
-    theta = M_PI/2.0;
-  if ( x == 0 && y < 0)
-    theta = 3*M_PI/2.0;
-  if ( x == 0 && y == 0)
-    theta = 0.0;
-
+  theta = atan2(x1,y1);
 }
 //===================== Stress exacte =====================
 void Stress_exacte(const Vector &x, Vector &stress)
@@ -280,9 +304,28 @@ void Stress_exacte(const Vector &x, Vector &stress)
   double r, theta;
   conversion(x(0), x(1), r, theta);
   double r2 = r*r;
+
   stress(0) = Sigmainf*0.5*((1-R2/r2) + (1+3*R2*R2/(r2*r2)-4*R2/r2)*cos(2*theta));
   stress(1) = Sigmainf*0.5*((1+R2/r2) - (1+3*R2*R2/(r2*r2))*cos(2*theta));
   stress(2) = -Sigmainf*0.5*(1-3*R2*R2/(r2*r2)+2*R2/r2)*sin(2*theta);
+}
+double StressCoefficient::Eval(ElementTransformation &T,
+                               const IntegrationPoint &ip)
+{
+  MFEM_ASSERT(u != NULL, "displacement field is not set");
+
+  double L = lambda.Eval(T, ip);
+  double M = mu.Eval(T, ip);
+  u->GetVectorGradient(T, grad);
+  if (si == sj)
+    {
+      double div_u = grad.Trace();
+      return L*div_u + 2*M*grad(si,si);
+    }
+  else
+    {
+      return M*(grad(si,sj) + grad(sj,si));
+    }
 }
 //===================== Strain exacte =====================
 void Strain_(DenseMatrix &grad, Vector &strain)
@@ -307,16 +350,16 @@ void Strain_(DenseMatrix &grad, Vector &strain)
 double F(const Vector &x)
 {
   double force;
-  if(x(0) == 0){
-    force = Sigmainf;
+  if(x(0) < 1e-6){
+    force = -Sigmainf;
   } else {
     force = 0.;
   }
   return force;
 }
 //===================== Strain dans QuadratureFunction =====================
-void SaveStrain(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
-		Mesh &mesh, QuadratureFunction Strain){
+void SaveStress(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
+		Mesh &mesh, QuadratureFunction Stress){
   FiniteElementSpace *fes = x.FESpace();
   int dim = fes->GetMesh()->SpaceDimension();
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
@@ -348,8 +391,8 @@ void SaveStrain(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
 	    data(k+i+j)=stressh(j);
 	}
     }
-  QuadratureSpace StrainSpace(&mesh, order);
-  Strain.SetSpace(&StrainSpace, data, tdim);
+  QuadratureSpace StressSpace(&mesh, order);
+  Stress.SetSpace(&StressSpace, data, tdim);
 }
 
 //==============Erreur en Norme energie ===================
@@ -360,7 +403,6 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
   int dim = fes->GetMesh()->SpaceDimension();
   const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
   ElementTransformation *Trans;
-
   double energy = 0.0;
   for (int i = 0; i < fes->GetNE() ; i++)
     {
@@ -371,7 +413,7 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
       Trans = fes->GetElementTransformation(i);
       Vector stressh(tdim), strainh(tdim);	//approché
       Vector stress(tdim), strain(tdim);	//exacte
-      DenseMatrix Ch;
+      DenseMatrix C;
       for (int j = 0; j < ir->GetNPoints(); j++)
 	{
 	  const IntegrationPoint &ip = ir->IntPoint(j);
@@ -380,11 +422,16 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 
 	  ComputeStrain(*Trans, ip, x, i, strainh);//approx
 	  Stress_exacte_coef.Eval(stress,*Trans,ip);//exact
-	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,Ch);
-	  Ch.Mult(strainh,stressh);	
-	  Ch.Invert();
-	  Ch.Mult(stress,strain);
-
+	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,C);
+	  C.Mult(strainh,stressh);
+	  C.Invert();
+	  C.Mult(stress,strain);
+/*
+cout<<stress(0)<<" "<<stressh(0)<<endl;
+cout<<stress(1)<<" "<<stressh(1)<<endl;
+cout<<stress(2)<<" "<<stressh(2)<<endl;
+cout<<endl;
+*/
 	  strainh -= strain;
 	  stressh -= stress;
 
@@ -410,7 +457,6 @@ void Elasticy_mat(ElementTransformation &T,const IntegrationPoint &ip,
 		  int dim, Coefficient &lambda, Coefficient &mu_func, DenseMatrix &C){
   double M = mu_func.Eval(T, ip);
   double L = lambda.Eval(T, ip);
-
   C.SetSize(dim*(dim+1)/2,dim*(dim+1)/2);
   C = 0.;
   for (int k = 0; k< dim; k++)
@@ -452,7 +498,6 @@ void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
       for (int j=0 ; j<dof ; j++)
 	loc_data(j,s) = loc_data_tmp(j);
     }
-  double w = T.Weight() * ip.weight;
   fe->CalcDShape(ip, dshape);
   MultAtB(loc_data, dshape, gh);
   Mult(gh, T.InverseJacobian(), grad);
