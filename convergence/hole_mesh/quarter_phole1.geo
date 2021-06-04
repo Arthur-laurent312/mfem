@@ -1,22 +1,21 @@
 lc=0.05;
-N=25;
+N=20;
 M=N+2;
-Point(1)={0,0,0,lc};
-
-ray=.02;
+ray=.01;
 cx=.1;
-cy=.05;
+cy=.1;
+Point(1)={-cx,-cy,0,lc};
 
 //morceaux d’ellipse
-Point(5)={cx,cy,0,lc};
-Point(6)={cx-ray,cy,0,lc};
-Point(8)={cx-ray,cy,0,lc};
-Point(9)={cx,cy-ray,0,lc};
+Point(5)={0,0,0,lc};
+Point(6)={-ray,0,0,lc};
+Point(9)={-ray,0,0,lc};
+Point(8)={0,-ray,0,lc};
 
-Point(10)={0,cy,0,lc};
-Point(11)={cx,0,0,lc};
+Point(10)={0,-cy,0,lc};
+Point(11)={-cx,0,0,lc};
 
-Point(14)={cx-ray*(Sqrt(2)/2),cy-ray*(Sqrt(2)/2),0,lc};
+Point(14)={-ray*(Sqrt(2)/2),-ray*(Sqrt(2)/2),0,lc};
 Ellipse(17)={8,5,8,14};
 Ellipse(18)={14,5,14,9};
 

@@ -13,14 +13,14 @@
 using namespace std;
 using namespace mfem;
 
-static constexpr double R2 = 0.02*0.02;	//Rayon troue au carré
-static constexpr double Sigmainf = 100.;	//contrainte à l'infinie
-static constexpr double E = 21e10;	//Module de Young
-static constexpr double nu = 0.3;	//Coef de poisson
+static constexpr double R2 = 0.01*0.01;	//Rayon troue au carré
+static constexpr double Sigmainf = 10e6;	//contrainte à l'infinie
+static constexpr double E = 210e6;	//Module de Young
+static constexpr double nu = 0.27;	//Coef de poisson
 static constexpr double lambda = E*nu/((1.+nu)*(1.-2.*nu)); //Coef de lamé
 static constexpr double mu = E/(2.*(1.+nu));
 static constexpr double cx = 0.1;	//dimension du domaine
-static constexpr double cy = 0.05;
+static constexpr double cy = 0.1;
 
 //Solution exacte
 void conversion(const double, const double , double &, double &);
@@ -36,13 +36,18 @@ double ComputeEnergyNorm(GridFunction &,
 			 Coefficient &, Coefficient &,
 			 VectorFunctionCoefficient &);
 
-void Elasticy_mat(ElementTransformation &,const IntegrationPoint &, int,
+void Elasticy_mat(ElementTransformation &,const IntegrationPoint &,
 		  Coefficient &, Coefficient &, DenseMatrix &);
 void ComputeStrain(ElementTransformation &,const IntegrationPoint &,
-		   GridFunction &, int,  Vector &);
+		   GridFunction &,  Vector &);
 
 void SaveStress(GridFunction &,Coefficient &, Coefficient &,
 		Mesh &, QuadratureFunction );
+
+//Changement de base
+void Cart_Pol(ElementTransformation &,const IntegrationPoint &, 
+	      Vector &, Vector &);
+
 class DiagCoefficient : public Coefficient
 {
 protected:
@@ -97,7 +102,7 @@ int main(int argc, char *argv[])
       return 1;
     }
   args.PrintOptions(cout);
-  slope_ener.SetSize(rep-1,3);
+  slope_ener.SetSize(rep,3);
   for (int r = 0; r < rep; r++){
     string  mesh_file = "hole_mesh/quarter_phole";
     string buf(mesh_file);
@@ -135,12 +140,12 @@ int main(int argc, char *argv[])
     // List of True DoFs : Define (here) Dirichlet conditions
     Array<int> ess_tdof_list, tmp_tdof, ess_bdr(mesh->bdr_attributes.Max());
     ess_bdr = 0;
-    ess_bdr[1] = 1;
+    ess_bdr[3] = 1;
     fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
     // ess_tof_list accumulates all needed dof
     ess_tdof_list.Append(tmp_tdof);
     ess_bdr = 0;
-    ess_bdr[3] = 1;
+    ess_bdr[1] = 1;
     fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 0);
     // ess_tof_list accumulates all needed dof
     ess_tdof_list.Append(tmp_tdof);
@@ -160,9 +165,12 @@ int main(int argc, char *argv[])
     // values for neumann boundary conditions are set within boundary function
     FunctionCoefficient Neumann_cond(F);
     bdr_attr_marker_neu = 0;
-    bdr_attr_marker_neu[0] = 1;
+    bdr_attr_marker_neu[4] = 1;
+    VectorArrayCoefficient fo(dim);
+    fo.Set(1, new ConstantCoefficient(0.0));
+    fo.Set(0, new FunctionCoefficient(F));
     LinearForm *b = new LinearForm(fespace);
-    b->AddBoundaryIntegrator(new BoundaryLFIntegrator(Neumann_cond),bdr_attr_marker_neu);
+    b->AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(fo),bdr_attr_marker_neu);
     cout << "r.h.s. ... " << flush;
 
     // 8. Define the solution vector x as a finite element grid function
@@ -194,7 +202,7 @@ int main(int argc, char *argv[])
   
     a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);  
     cout << "done." << endl << "Size of linear system: " <<
-     A.Height() << endl;
+      A.Height() << endl;
   
     if(iterative){
       GSSmoother M(A);
@@ -294,9 +302,12 @@ int main(int argc, char *argv[])
 }
 void conversion(const double x, const double y , double &r, double &theta)
 {
-  double x1=x-cx, y1=y-cy;
+  //double x1=x-cx, y1=y-cy;
+  double x1=x, y1=y;
   r = sqrt(x1*x1 + y1*y1);
-  theta = atan2(x1,y1);
+  theta = -atan2(x1,y1)+M_PI/2;
+  if(x==0){
+    theta = 4.71239;}
 }
 //===================== Stress exacte =====================
 void Stress_exacte(const Vector &x, Vector &stress)
@@ -307,7 +318,7 @@ void Stress_exacte(const Vector &x, Vector &stress)
 
   stress(0) = Sigmainf*0.5*((1-R2/r2) + (1+3*R2*R2/(r2*r2)-4*R2/r2)*cos(2*theta));
   stress(1) = Sigmainf*0.5*((1+R2/r2) - (1+3*R2*R2/(r2*r2))*cos(2*theta));
-  stress(2) = -Sigmainf*0.5*(1-3*R2*R2/(r2*r2)+2*R2/r2)*sin(2*theta);
+  stress(2) = -Sigmainf*0.5*(1 - 3*R2*R2/(r2*r2) + 2*R2/r2)*sin(2*theta);
 }
 double StressCoefficient::Eval(ElementTransformation &T,
                                const IntegrationPoint &ip)
@@ -316,16 +327,55 @@ double StressCoefficient::Eval(ElementTransformation &T,
 
   double L = lambda.Eval(T, ip);
   double M = mu.Eval(T, ip);
+  Vector stress;
+  VectorFunctionCoefficient Stress_exacte_coef(3,Stress_exacte);
+  Stress_exacte_coef.Eval(stress,T,ip);//exact
   u->GetVectorGradient(T, grad);
+
+  FiniteElementSpace *fes = u->FESpace();
+  Array<int> udofs;
+  const FiniteElement *fe = fes->GetFE(T.ElementNo);
+  const int dof = fe->GetDof();
+  const int dim = fe->GetDim();
+  const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+  DenseMatrix dshape(dof, dim);
+  DenseMatrix gh(dim, dim),grad (dim, dim);
+  fes->GetElementVDofs(T.ElementNo, udofs);
+  DenseMatrix loc_data(dof, dim);
+  for (int s=0 ; s<dim ; s++)
+    {
+      Array<int> udofs_tmp(dof);
+      udofs_tmp = 0.;
+      for(int j=0 ; j<dof ; j++){
+	udofs_tmp[j] = udofs[j+dof*s];}
+
+      Vector loc_data_tmp;
+      u->GetSubVector(udofs_tmp, loc_data_tmp);
+
+      for (int j=0 ; j<dof ; j++)
+	loc_data(j,s) = loc_data_tmp(j);
+    }
+  fe->CalcDShape(ip, dshape);
+  MultAtB(loc_data, dshape, gh);
+  Mult(gh, T.InverseJacobian(), grad);
+  double xi = ip.x, yi = ip.y;
+  double r, theta;
+  conversion(xi,yi,r,theta);
+
   if (si == sj)
     {
       double div_u = grad.Trace();
-      return L*div_u + 2*M*grad(si,si);
-    }
+      stres_cart =  L*div_u + 2*M*grad(si,si);
+      if(si == 0){
+		
+      }
+      return
+	}
   else
     {
       return M*(grad(si,sj) + grad(sj,si));
     }
+
 }
 //===================== Strain exacte =====================
 void Strain_(DenseMatrix &grad, Vector &strain)
@@ -351,7 +401,7 @@ double F(const Vector &x)
 {
   double force;
   if(x(0) < 1e-6){
-    force = -Sigmainf;
+    force = Sigmainf;
   } else {
     force = 0.;
   }
@@ -384,8 +434,8 @@ void SaveStress(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
 	  const IntegrationPoint &ip = ir->IntPoint(k);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
-	  ComputeStrain(*Trans, ip, x, i, strainh);
-	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,C);
+	  ComputeStrain(*Trans, ip, x, strainh);
+	  Elasticy_mat(*Trans,ip,lambdah,muh,C);
 	  C.Mult(strainh,stressh);	
 	  for(int j = 0; j < tdim; j++)
 	    data(k+i+j)=stressh(j);
@@ -411,7 +461,7 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
       const IntegrationRule *ir = &IntRules.Get(fe->GetGeomType(), order);
       const int dof = fe->GetDof();
       Trans = fes->GetElementTransformation(i);
-      Vector stressh(tdim), strainh(tdim);	//approché
+      Vector stressh(tdim), strainh(tdim), strainh_pol(tdim);	//approché
       Vector stress(tdim), strain(tdim);	//exacte
       DenseMatrix C;
       for (int j = 0; j < ir->GetNPoints(); j++)
@@ -420,19 +470,20 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
 
-	  ComputeStrain(*Trans, ip, x, i, strainh);//approx
+	  ComputeStrain(*Trans, ip, x, strainh);//approx
+	  Cart_Pol(*Trans, ip, strainh, strainh_pol);
 	  Stress_exacte_coef.Eval(stress,*Trans,ip);//exact
-	  Elasticy_mat(*Trans,ip,dim,lambdah,muh,C);
-	  C.Mult(strainh,stressh);
+	  Elasticy_mat(*Trans,ip,lambdah,muh,C);
+	  C.Mult(strainh_pol,stressh);
 	  C.Invert();
 	  C.Mult(stress,strain);
-/*
-cout<<stress(0)<<" "<<stressh(0)<<endl;
-cout<<stress(1)<<" "<<stressh(1)<<endl;
-cout<<stress(2)<<" "<<stressh(2)<<endl;
-cout<<endl;
-*/
-	  strainh -= strain;
+	  /*
+	    cout<<stress(0)<<" "<<stressh(0)<<endl;
+	    cout<<stress(1)<<" "<<stressh(1)<<endl;
+	    cout<<stress(2)<<" "<<stressh(2)<<endl;
+	    cout<<endl;
+	  */
+	  strainh_pol -= strain;
 	  stressh -= stress;
 
 	  double pdc=0.0;
@@ -454,7 +505,8 @@ cout<<endl;
 
 //===================== Matrice élasticité =====================
 void Elasticy_mat(ElementTransformation &T,const IntegrationPoint &ip, 
-		  int dim, Coefficient &lambda, Coefficient &mu_func, DenseMatrix &C){
+		  Coefficient &lambda, Coefficient &mu_func, DenseMatrix &C){
+  int dim = T.GetSpaceDim();
   double M = mu_func.Eval(T, ip);
   double L = lambda.Eval(T, ip);
   C.SetSize(dim*(dim+1)/2,dim*(dim+1)/2);
@@ -474,16 +526,16 @@ void Elasticy_mat(ElementTransformation &T,const IntegrationPoint &ip,
 
 //===================== Déformation =====================
 void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
-		   GridFunction &x, int elem,  Vector &strain){
+		   GridFunction &x, Vector &strain){
   FiniteElementSpace *fes = x.FESpace();
   Array<int> udofs;
-  const FiniteElement *fe = fes->GetFE(elem);
+  const FiniteElement *fe = fes->GetFE(T.ElementNo);
   const int dof = fe->GetDof();
   const int dim = fe->GetDim();
   const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
   DenseMatrix dshape(dof, dim);
   DenseMatrix gh(dim, dim),grad (dim, dim);
-  fes->GetElementVDofs(elem, udofs);
+  fes->GetElementVDofs(T.ElementNo, udofs);
   DenseMatrix loc_data(dof, dim);
   for (int s=0 ; s<dim ; s++)
     {
@@ -502,4 +554,32 @@ void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
   MultAtB(loc_data, dshape, gh);
   Mult(gh, T.InverseJacobian(), grad);
   Strain_(grad, strain);
+}
+//===================== Changement de base =====================
+void Cart_Pol(ElementTransformation &T,const IntegrationPoint &ip, 
+	      Vector &Stress_cart, Vector &Stress_pol){
+  int dim = T.GetSpaceDim();
+  double xi = ip.x, yi = ip.y;
+  double r, theta;
+  conversion(xi,yi,r,theta);
+  Vector stress_col1(dim), stress_col2(dim);
+  Vector stress_col1_tmp(dim), stress_col2_tmp(dim);
+  stress_col1(0) = Stress_cart(0);  //Séparation de la matrice en deux colonne
+  stress_col1(1) = Stress_cart(2); 
+  stress_col2(0) = Stress_cart(2); 
+  stress_col2(1) = Stress_cart(1);
+  DenseMatrix L(dim,dim);  //Matrice changement de base
+  L(0,0) = L(1,1) = cos(2*theta);
+  L(0,1) = sin(2*theta);
+  L(1,0) = -sin(2*theta);
+  //L.M.L^t
+  L.Mult(stress_col1, stress_col1_tmp);
+  L.Mult(stress_col2, stress_col2_tmp);
+  L.Invert();		//L^-1 = L^t
+  L.Mult(stress_col1_tmp, stress_col1);
+  L.Mult(stress_col2_tmp, stress_col2);
+
+  Stress_pol(0) = stress_col1(0);
+  Stress_pol(1) = stress_col2(1); 
+  Stress_pol(2) = stress_col2(0); 
 }
