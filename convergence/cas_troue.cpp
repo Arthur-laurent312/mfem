@@ -37,13 +37,14 @@ double ComputeEnergyNorm(GridFunction &,
 			 VectorFunctionCoefficient &);
 
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &,
-		  Coefficient &, Coefficient &, DenseMatrix &);
+		  double &, double &, DenseMatrix &);
 void ComputeStrain(ElementTransformation &,const IntegrationPoint &,
 		   GridFunction &,  Vector &);
+void ComputeStress(ElementTransformation &,const IntegrationPoint &,
+		   GridFunction &,Coefficient &, Coefficient &, Vector &);
 
 void SaveStress(GridFunction &,Coefficient &, Coefficient &,
 		Mesh &, QuadratureFunction );
-
 //Changement de base
 void Cart_Pol(ElementTransformation &,const IntegrationPoint &, 
 	      Vector &, Vector &);
@@ -53,25 +54,23 @@ class DiagCoefficient : public Coefficient
 protected:
   Coefficient &lambda, &mu;
   GridFunction *u; // displacement
-  int si, sj; // component to evaluate, 0 <= si,sj < dim
-
   DenseMatrix grad; // auxiliary matrix, used in Eval
 
 public:
   DiagCoefficient(Coefficient &lambda_, Coefficient &mu_)
-    : lambda(lambda_), mu(mu_), u(NULL), si(0), sj(0) { }
+    : lambda(lambda_), mu(mu_), u(NULL) { }
 
   void SetDisplacement(GridFunction &u_) { u = &u_; }
 
-  virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip) = 0;
+  virtual void Eval(ElementTransformation &T, const IntegrationPoint &ip, 
+		    Vector &Stress) = 0;
 };
 
 class StressCoefficient : public DiagCoefficient
 {
 public:
   using DiagCoefficient::DiagCoefficient;
-  void SetComponent(int i, int j) { si = i; sj = j; }
-  virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip);
+  virtual void Eval(ElementTransformation &T, const IntegrationPoint &ip, Vector &Stress);
 
 };
 
@@ -247,30 +246,18 @@ int main(int argc, char *argv[])
     GridFunction *nodes = mesh->GetNodes();
     *nodes += x;
     FiniteElementSpace *fieldspace;
-    fieldspace = new FiniteElementSpace(mesh, fec, 1, Ordering::byVDIM);
+    fieldspace = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
     ParaViewDataCollection paraview_dc("Troue", mesh);
     paraview_dc.SetPrefixPath("ParaView");
     std::string letters = "xyz";
-    Array<GridFunction *> stressGrid(dim*(dim+1)/2);
+    GridFunction *stressGrid;
+    stressGrid = new GridFunction(fieldspace);
     StressCoefficient stress_c(lambda_func, mu_func);
     stress_c.SetDisplacement(x);
-    int c = 0;
-    for (int si = 0; si < dim; si++)
-      {
-	for (int sj = si; sj < dim; sj++)
-	  {
-	    std::string stressname= "S" + letters.substr(si,1) +
-	      letters.substr(sj,1);
-	    stressGrid[c] = new GridFunction(fieldspace);
-	    stress_c.SetComponent(si, sj);
-	    stressGrid[c]->ProjectDiscCoefficient(stress_c, GridFunction::ARITHMETIC);
-	    paraview_dc.RegisterField(stressname,stressGrid[c]);
-	  }
-      }
+    stressGrid->ProjectDiscCoefficient(stress_c, GridFunction::ARITHMETIC);
+    paraview_dc.RegisterField("Stress numérique",stressGrid);
     //Stress exacte
-    FiniteElementSpace *fieldspace_exacte;
-    fieldspace_exacte = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
-    GridFunction stress_exacte(fieldspace_exacte);
+    GridFunction stress_exacte(fieldspace);
     stress_exacte.ProjectCoefficient(Stress_exacte_coef);
     paraview_dc.SetLevelsOfDetail(order+1);
     paraview_dc.SetCycle(0);
@@ -302,7 +289,6 @@ int main(int argc, char *argv[])
 }
 void conversion(const double x, const double y , double &r, double &theta)
 {
-  //double x1=x-cx, y1=y-cy;
   double x1=x, y1=y;
   r = sqrt(x1*x1 + y1*y1);
   theta = -atan2(x1,y1)+M_PI/2;
@@ -320,62 +306,12 @@ void Stress_exacte(const Vector &x, Vector &stress)
   stress(1) = Sigmainf*0.5*((1+R2/r2) - (1+3*R2*R2/(r2*r2))*cos(2*theta));
   stress(2) = -Sigmainf*0.5*(1 - 3*R2*R2/(r2*r2) + 2*R2/r2)*sin(2*theta);
 }
-double StressCoefficient::Eval(ElementTransformation &T,
-                               const IntegrationPoint &ip)
+void StressCoefficient::Eval(ElementTransformation &T,
+			     const IntegrationPoint &ip, Vector &Stress)
 {
   MFEM_ASSERT(u != NULL, "displacement field is not set");
 
-  double L = lambda.Eval(T, ip);
-  double M = mu.Eval(T, ip);
-  Vector stress;
-  VectorFunctionCoefficient Stress_exacte_coef(3,Stress_exacte);
-  Stress_exacte_coef.Eval(stress,T,ip);//exact
-  u->GetVectorGradient(T, grad);
-
-  FiniteElementSpace *fes = u->FESpace();
-  Array<int> udofs;
-  const FiniteElement *fe = fes->GetFE(T.ElementNo);
-  const int dof = fe->GetDof();
-  const int dim = fe->GetDim();
-  const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
-  DenseMatrix dshape(dof, dim);
-  DenseMatrix gh(dim, dim),grad (dim, dim);
-  fes->GetElementVDofs(T.ElementNo, udofs);
-  DenseMatrix loc_data(dof, dim);
-  for (int s=0 ; s<dim ; s++)
-    {
-      Array<int> udofs_tmp(dof);
-      udofs_tmp = 0.;
-      for(int j=0 ; j<dof ; j++){
-	udofs_tmp[j] = udofs[j+dof*s];}
-
-      Vector loc_data_tmp;
-      u->GetSubVector(udofs_tmp, loc_data_tmp);
-
-      for (int j=0 ; j<dof ; j++)
-	loc_data(j,s) = loc_data_tmp(j);
-    }
-  fe->CalcDShape(ip, dshape);
-  MultAtB(loc_data, dshape, gh);
-  Mult(gh, T.InverseJacobian(), grad);
-  double xi = ip.x, yi = ip.y;
-  double r, theta;
-  conversion(xi,yi,r,theta);
-
-  if (si == sj)
-    {
-      double div_u = grad.Trace();
-      stres_cart =  L*div_u + 2*M*grad(si,si);
-      if(si == 0){
-		
-      }
-      return
-	}
-  else
-    {
-      return M*(grad(si,sj) + grad(sj,si));
-    }
-
+  ComputeStress(T, ip, *u, lambda, mu, Stress);
 }
 //===================== Strain exacte =====================
 void Strain_(DenseMatrix &grad, Vector &strain)
@@ -434,9 +370,7 @@ void SaveStress(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
 	  const IntegrationPoint &ip = ir->IntPoint(k);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
-	  ComputeStrain(*Trans, ip, x, strainh);
-	  Elasticy_mat(*Trans,ip,lambdah,muh,C);
-	  C.Mult(strainh,stressh);	
+	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh);	
 	  for(int j = 0; j < tdim; j++)
 	    data(k+i+j)=stressh(j);
 	}
@@ -469,12 +403,11 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 	  const IntegrationPoint &ip = ir->IntPoint(j);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
-
-	  ComputeStrain(*Trans, ip, x, strainh);//approx
-	  Cart_Pol(*Trans, ip, strainh, strainh_pol);
+	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh);	
 	  Stress_exacte_coef.Eval(stress,*Trans,ip);//exact
-	  Elasticy_mat(*Trans,ip,lambdah,muh,C);
-	  C.Mult(strainh_pol,stressh);
+	  double M = muh.Eval(*Trans, ip);
+	  double L = lambdah.Eval(*Trans, ip);
+	  Elasticy_mat(*Trans,ip,L,M,C);
 	  C.Invert();
 	  C.Mult(stress,strain);
 	  /*
@@ -505,10 +438,8 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 
 //===================== Matrice élasticité =====================
 void Elasticy_mat(ElementTransformation &T,const IntegrationPoint &ip, 
-		  Coefficient &lambda, Coefficient &mu_func, DenseMatrix &C){
+		  double &L, double &M, DenseMatrix &C){
   int dim = T.GetSpaceDim();
-  double M = mu_func.Eval(T, ip);
-  double L = lambda.Eval(T, ip);
   C.SetSize(dim*(dim+1)/2,dim*(dim+1)/2);
   C = 0.;
   for (int k = 0; k< dim; k++)
@@ -554,6 +485,21 @@ void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
   MultAtB(loc_data, dshape, gh);
   Mult(gh, T.InverseJacobian(), grad);
   Strain_(grad, strain);
+}
+//===================== Contrainte =====================
+void ComputeStress(ElementTransformation &T,const IntegrationPoint &ip,
+		   GridFunction &x,Coefficient &lambda, Coefficient &mu, Vector &stress){
+  double L = lambda.Eval(T, ip);
+  double M = mu.Eval(T, ip);
+  int dim = T.GetSpaceDim();
+  int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+  stress.SetSize(tdim);
+  Vector strainh(tdim), strainh_pol(tdim);
+  ComputeStrain(T, ip, x, strainh);
+  Cart_Pol(T, ip, strainh, strainh_pol);
+  DenseMatrix C;
+  Elasticy_mat(T,ip,L,M,C);
+  C.Mult(strainh_pol,stress);
 }
 //===================== Changement de base =====================
 void Cart_Pol(ElementTransformation &T,const IntegrationPoint &ip, 
