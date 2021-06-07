@@ -41,7 +41,7 @@ void Elasticy_mat(ElementTransformation &,const IntegrationPoint &,
 void ComputeStrain(ElementTransformation &,const IntegrationPoint &,
 		   GridFunction &,  Vector &);
 void ComputeStress(ElementTransformation &,const IntegrationPoint &,
-		   GridFunction &,Coefficient &, Coefficient &, Vector &);
+		   GridFunction &,Coefficient &, Coefficient &, Vector &, Vector &);
 
 void SaveStress(GridFunction &,Coefficient &, Coefficient &,
 		Mesh &, QuadratureFunction );
@@ -311,17 +311,17 @@ void conversion(const double x, const double y , double &r, double &theta)
     theta = 4.71239;}
 }
 //===================== Stress exacte =====================
-void Stress_exacte(const Vector &x, Vector &stress)
+void Stress_exacte(const Vector &x, Vector &stress_pol)
 {
   double r, theta;
   conversion(x(0), x(1), r, theta);
   double r2 = r*r;
-
+  Vector stress(3);
   stress(0) = Sigmainf*0.5*((1-R2/r2) + (1+3*R2*R2/(r2*r2)-4*R2/r2)*cos(2*theta));
   stress(1) = Sigmainf*0.5*((1+R2/r2) - (1+3*R2*R2/(r2*r2))*cos(2*theta));
   stress(2) = -Sigmainf*0.5*(1 - 3*R2*R2/(r2*r2) + 2*R2/r2)*sin(2*theta);
-  //Vector stress(3);
- // Cart_Pol(x(0), x(1), stress, stress_pol);
+
+  Pol_Cart(x(0), x(1), stress, stress_pol);
 }
 /*
   void StressCoefficient::Eval(ElementTransformation &T,
@@ -407,7 +407,7 @@ void SaveStress(GridFunction &x,Coefficient &lambdah, Coefficient &muh,
 	  const IntegrationPoint &ip = ir->IntPoint(k);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
-	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh);	
+	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh,strainh);	
 	  for(int j = 0; j < tdim; j++)
 	    data(k+i+j)=stressh(j);
 	}
@@ -440,20 +440,20 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
 	  const IntegrationPoint &ip = ir->IntPoint(j);
 	  Trans->SetIntPoint(&ip);
 	  double w = Trans->Weight() * ip.weight;
-	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh);	
+	  ComputeStress(*Trans, ip, x, lambdah, muh, stressh, strainh);	
 	  Stress_exacte_coef.Eval(stress,*Trans,ip);//exact
 	  double M = muh.Eval(*Trans, ip);
 	  double L = lambdah.Eval(*Trans, ip);
 	  Elasticy_mat(*Trans,ip,L,M,C);
 	  C.Invert();
 	  C.Mult(stress,strain);
-	  
+	  /*
 	  cout<<stress(0)<<" "<<stressh(0)<<endl;
 	  cout<<stress(1)<<" "<<stressh(1)<<endl;
 	  cout<<stress(2)<<" "<<stressh(2)<<endl;
 	  cout<<endl;
-	  
-	  strainh_pol -= strain;
+	  */
+	  strainh -= strain;
 	  stressh -= stress;
 
 	  double pdc=0.0;
@@ -525,18 +525,19 @@ void ComputeStrain(ElementTransformation &T,const IntegrationPoint &ip,
 }
 //===================== Contrainte =====================
 void ComputeStress(ElementTransformation &T,const IntegrationPoint &ip,
-		   GridFunction &x,Coefficient &lambda, Coefficient &mu, Vector &stress){
+		   GridFunction &x,Coefficient &lambda, Coefficient &mu, Vector &stress, Vector &strainh){
   double L = lambda.Eval(T, ip);
   double M = mu.Eval(T, ip);
   int dim = T.GetSpaceDim();
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
   stress.SetSize(tdim);
-  Vector strainh(tdim), stress_cart(tdim);
-  ComputeStrain(T, ip, x, strainh);	//calcul de la déformation
+  Vector  stress_cart(tdim), strainh_cart(tdim);
+  ComputeStrain(T, ip, x, strainh_cart);	//calcul de la déformation
   const double xi = ip.x, yi = ip.y;
   DenseMatrix C;
   Elasticy_mat(T,ip,L,M,C);	//matrice d'élasticité
   C.Mult(strainh,stress_cart); //calcul de la contrainte
+  Cart_Pol(xi, yi, strainh_cart, strainh);	//changement de base
   Cart_Pol(xi, yi, stress_cart, stress);	//changement de base
 }
 //===================== Changement de base =====================
@@ -553,8 +554,8 @@ void Cart_Pol(const double &x,const double &y, Vector &Stress_cart, Vector &Stre
   stress_cart2(1) = Stress_cart(1);
   DenseMatrix L(dim,dim);  //Matrice de passage
   L(0,0) = L(1,1) = cos(theta);
-  L(0,1) = sin(theta);
-  L(1,0) = -sin(theta);
+  L(0,1) = -sin(theta);
+  L(1,0) = sin(theta);
   //L.M
   L.Mult(stress_cart1, stress_col1_tmp);
   L.Mult(stress_cart2, stress_col2_tmp);
@@ -565,16 +566,16 @@ void Cart_Pol(const double &x,const double &y, Vector &Stress_cart, Vector &Stre
   stress_tmp(1,0) = stress_col1_tmp(0);
   L.Invert();		//L^-1 = L^t
   stress_col1_tmp(0) = L(0,0);  //séparation matrice passage
-  stress_col1_tmp(1) = L(0,1);
+  stress_col1_tmp(1) = L(1,0);
   stress_col2_tmp(1) = L(1,1);
-  stress_col2_tmp(0) = L(1,0);
+  stress_col2_tmp(0) = L(0,1);
   //M.L^t
   stress_tmp.Mult(stress_col1_tmp, stress_col1);
   stress_tmp.Mult(stress_col2_tmp, stress_col2);
-
+cout<<stress_col2(0)<<" "<<stress_col1(1)<<endl;
   Stress_pol(0) = stress_col1(0);
   Stress_pol(1) = stress_col2(1); 
-  Stress_pol(2) = stress_col2(0); 
+  Stress_pol(2) = stress_col1(1); 
 }
 void Pol_Cart(const double &x,const double &y, Vector &Stress_pol, Vector &Stress_cart){
   int dim = 2;
