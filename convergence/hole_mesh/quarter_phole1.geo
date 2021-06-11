@@ -1,9 +1,9 @@
 lc=0.05;
-N=20;
+N=30;
 M=N+2;
-ray=.01;
-cx=.1;
-cy=.1;
+ray=1.;
+cx=10.;
+cy=10.;
 Point(1)={-cx,-cy,0,lc};
 
 //morceaux d’ellipse
@@ -32,11 +32,11 @@ Line Loop(4)={-32,-17,33,34};
 Plane Surface(1)={3};
 Plane Surface(2)={4};
 Physical Surface(1)={1,2};
-Physical Curve(1)={34};	//gauche
+Physical Curve(1)={34};	//bas
 Physical Curve(2)={33};	//haut
 Physical Curve(3)={17,18};	//demicercle
 Physical Curve(4)={30};	//droite
-Physical Curve(5)={29};	//bas
+Physical Curve(5)={29};	//gauche
 
 //maillage quadrangle
 Transfinite Curve {17,18,29,34} = M;
