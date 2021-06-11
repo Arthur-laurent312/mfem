@@ -100,13 +100,7 @@ int main(int argc, char *argv[])
     }
   //define parallel mesh by a partitioning of the serial mesh.
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
-  /*
-    int par_ref_levels = 1;
-    for (int l = 0; l < par_ref_levels; l++)
-    {
-    pmesh->uniformrefinement();
-    }
-  */
+
   //  define a finite element space on the mesh. here we use Vector finite
   //    elements, i.e. dim copies of a scalar finite element space. the Vector
   //    dimension is specified by the last argument of the ParFiniteElementSpace
@@ -267,28 +261,6 @@ int main(int argc, char *argv[])
   delete mesh;
   delete pmesh;
   MPI_Finalize();
-  /*
-  //save in praview format
-  if (ref1==0){
-  ParGridFunction diff(fespace);
-  ParGridFunction ex1(fespace);
-  diff.projectCoefficient(sol_exact_coef);
-  ex1.projectCoefficient(sol_exact_coef);
-  diff-= x;
-  paraviewdatacollection paraview_dc("example2", mesh);
-  paraview_dc.Setprefixpath("paraview");
-  paraview_dc.Setlevelsofdetail(order+1);
-  paraview_dc.Setcycle(0);
-  paraview_dc.Setdataformat(vtkformat::binary)
-  paraview_dc.Sethighorderoutput(true);
-  paraview_dc.Settime(0.0); // Set the time
-  paraview_dc.registerfield("numerical_solution",&x);
-  paraview_dc.registerfield("diff-exact_solution",&diff);
-  paraview_dc.registerfield("exact_solution",&ex1);
-  paraview_dc.save();	
-  }
-  */
-
   return 0;
 }
 

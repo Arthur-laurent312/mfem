@@ -98,14 +98,11 @@ int main(int argc, char *argv[])
   slope_grad.SetSize(rep-1,3);
   slope_gradbis.SetSize(rep-1,3);
 
-  string const err_energy("err_flexion_ordretest.txt");
+  string const err_energy("err_flexion_ordre2.txt");
   ofstream err_energy_flux(err_energy.c_str());
   if (!err_energy_flux.is_open()) {
     cout << "Problem in openning file" << endl;
     exit(0);
-  }
-
-  {
     cout << "Openning file" << endl;
     Mesh *mesh = new Mesh(mesh_file, 1, 1);
     // 2. Read the mesh from the given mesh file. We can handle triangular,
@@ -266,12 +263,6 @@ int main(int argc, char *argv[])
       iter++;
   
       //Save in Praview format
-      VectorFunctionCoefficient cgux_exact(2, gradux_exact);
-      VectorFunctionCoefficient cguy_exact(2, graduy_exact);
-      GridFunction gradx(fespace);
-      gradx.ProjectCoefficient(cgux_exact);
-      GridFunction grady(fespace);
-      grady.ProjectCoefficient(cguy_exact);
 
       GridFunction ex(fespace);
       ex.ProjectCoefficient(sol_exact_coef);
@@ -289,8 +280,6 @@ int main(int argc, char *argv[])
       paraview_dc.RegisterField("numerical_solution",&x);
       paraview_dc.RegisterField("diff-exact_solution",&diff);
       paraview_dc.RegisterField("exact_solution",&ex);
-      paraview_dc.RegisterField("gradx",&gradx);
-      paraview_dc.RegisterField("grady",&grady);
       paraview_dc.Save();	
   
       delete a;
@@ -330,19 +319,6 @@ int main(int argc, char *argv[])
 	" H1 bis: "<<slope_gradbis(i,0) 
   	   << " Energie: " << slope_ener(i,0)<<" Taille de maille= "<<
   	slope_l2(i,1)<<endl;}
-
-    cout<<endl;
-    err_energy_flux<<endl;
-    cout<<"Rapport de norme:"<<endl;
-    err_energy_flux << "Pente de convergence:"<<endl;
-    for (int i=1; i<iter; i++){
-      cout << "Norme H1: " << slope_grad(i,1)<<" Norme Energie: "<<slope_ener(i,1)
-  	   << " Rapport norme energie/H1: " << slope_ener(i,1)/slope_grad(i,1)
-	   <<" Rapport erreur norme energie/H1: "<<slope_ener(i,2)/slope_grad(i,2)<<endl;
-      err_energy_flux<< "Norme H1: " << slope_grad(i,1)<<" Norme Energie: "<<slope_ener(i,1)
-		     << " Rapport norme energie/H1: " << slope_ener(i,1)/slope_grad(i,1)
-		     <<" Rapport erreur norme energie/H1: "<<slope_ener(i,2)/slope_grad(i,2)<<endl;}
-
   }//end flux .txt
   return 0;
 }

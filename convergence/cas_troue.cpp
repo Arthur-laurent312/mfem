@@ -4,7 +4,12 @@
 //bord est en traction avec la contrainte Sigmainf imposée
 //Par symétrie on peut considérer seulement un quart de la plaque
 //
-//Ref: https://perso.ensta-paris.fr/~mbonnet/codes_donnees.pdf
+//Ref: https://www.researchgate.net/profile/Deghboudj-Samir/
+//	publication/306058202_Etude_de_la_concentration_de_con
+//	trainte_dans_une_plaque_trouee_sollicitee_en_traction/
+//	links/57aceab808ae0932c974cb63/Etude-de-la-concentration-
+//	de-contrainte-dans-une-plaque-trouee-sollicitee-en-tractio
+//	n.pdf?origin=publication_detail
 
 #include "mfem.hpp"
 #include <fstream>
@@ -387,7 +392,7 @@ double StressCoefficient::Eval(ElementTransformation &T,
   if (si == sj)
     {
       double div_u = grad.Trace();
-	return (L*div_u + 2*M*grad(si,si));}
+      return (L*div_u + 2*M*grad(si,si));
     }
   else
     {
@@ -582,10 +587,10 @@ double StepMax(Mesh &mesh){
   double h = 0., h_tmp;
   for (int i = 0; i < mesh.GetNE() ; i++)
     {
-		h_tmp = mesh.GetElementSize(i);
-		if(h_tmp > h){
-			h = h_tmp;
-		}
-	}
+      h_tmp = mesh.GetElementSize(i);
+      if(h_tmp > h){
+	h = h_tmp;
+      }
+    }
   return h;
 }
