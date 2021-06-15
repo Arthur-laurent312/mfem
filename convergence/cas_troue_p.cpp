@@ -124,7 +124,12 @@ int main(int argc, char *argv[])
       args.PrintOptions(cout);
     }
   //lecture du malliage
+
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
+int rep = 8;
+  for (int r = 0; r < rep; r++){
+      mesh->UniformRefinement();
+}
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
   // Read the mesh from the given mesh file. We can handle triangular,
   //    quadrilateral, tetrahedral or hexahedral elements with the same code.
