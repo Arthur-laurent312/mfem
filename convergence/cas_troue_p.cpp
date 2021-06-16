@@ -115,10 +115,7 @@ int main(int argc, char *argv[])
       if (myid == 0)
  	{
  	  args.PrintUsage(cout);
- 	}
-      MPI_Finalize();
-      return 1;
-    }
+
   if (myid == 0)
     {
       args.PrintOptions(cout);
@@ -231,6 +228,7 @@ int rep = 8;
   //     conditions, applying conforming constraints for non-conforming AMR,
   //     static condensation, etc.
   if (myid == 0) { cout << "matrix ... " << flush; }
+  if (static_cond) { a->EnableStaticCondensation(); }
   a->Assemble();
   b->Assemble();
   
