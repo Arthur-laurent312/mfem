@@ -115,6 +115,7 @@ int main(int argc, char *argv[])
       if (myid == 0)
  	{
  	  args.PrintUsage(cout);
+ 	}
 
   if (myid == 0)
     {
