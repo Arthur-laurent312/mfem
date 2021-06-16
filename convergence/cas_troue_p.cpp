@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
  	{
  	  args.PrintUsage(cout);
  	}
-
+}
   if (myid == 0)
     {
       args.PrintOptions(cout);
