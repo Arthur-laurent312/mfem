@@ -52,7 +52,7 @@ void ComputeStress(ElementTransformation &,const IntegrationPoint &,
 //Changement de base
 void ChangeBase(const double &,const double &, Vector &, Vector &);
 //Recherche taille de maille max
-double StepMax(ParMesh &);
+double StepMax(Mesh &);
 class DiagCoefficient : public Coefficient
 {
 protected:
@@ -535,11 +535,11 @@ void ChangeBase(const double &x,const double &y,
     +cos(2*theta)*stress_cart(2);
 }
 //===================== Recherche pas max =====================
-double StepMax(ParMesh &pmesh){
+double StepMax(Mesh &mesh){
   double h = 0., h_tmp;
-  for (int i = 0; i < pmesh.GetNE() ; i++)
+  for (int i = 0; i < mesh.GetNE() ; i++)
     {
-      h_tmp = pmesh.GetElementSize(i);
+      h_tmp = mesh.GetElementSize(i);
       if(h_tmp > h){
 	h = h_tmp;
       }
