@@ -57,7 +57,7 @@ class DiagCoefficient : public Coefficient
 {
 protected:
   Coefficient &lambda, &mu;
-  GridFunction *u; // displacement
+  ParGridFunction *u; // displacement
   int si, sj; // component to evaluate, 0 <= si,sj < dim
 
   DenseMatrix grad; // auxiliary matrix, used in Eval
@@ -66,7 +66,7 @@ public:
   DiagCoefficient(Coefficient &lambda_, Coefficient &mu_)
     : lambda(lambda_), mu(mu_), u(NULL), si(0), sj(0) { }
 
-  void SetDisplacement(GridFunction &u_) { u = &u_; }
+  void SetDisplacement(ParGridFunction &u_) { u = &u_; }
 
   virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip) = 0;
 };
@@ -77,7 +77,6 @@ public:
   using DiagCoefficient::DiagCoefficient;
   void SetComponent(int i, int j) { si = i; sj = j; }
   virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip);
-
 };
 
 int main(int argc, char *argv[])
@@ -88,12 +87,13 @@ int main(int argc, char *argv[])
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   // Parse command-line options.
-  const char *mesh_file = "hole_mesh/quarter_phole8.msh";
+  const char *mesh_file = "hole_mesh/quarter_phole0.msh";
   bool static_cond = false;
   int order = 1;
   bool amg_elast = 0;
   bool reorder_space = false;
   bool iterative = true;
+  int ref_levels = 2;
   OptionsParser args(argc, argv);
   args.AddOption(&mesh_file, "-m", "--mesh",
  		 "mesh file to use.");
@@ -109,6 +109,7 @@ int main(int argc, char *argv[])
 		 "--direct", "Enable direct or iterative solver.");
   args.AddOption(&reorder_space, "-nodes", "--by-nodes", "-vdim", "--by-vdim",
  		 "use bynodes ordering of Vector space instead of byvdim");
+  args.AddOption(&ref_levels, "-r", "--num_ref", "nombre de rafinement de maillage");
   args.Parse();
   if (!args.Good())
     {
@@ -116,18 +117,21 @@ int main(int argc, char *argv[])
  	{
  	  args.PrintUsage(cout);
  	}
-}
+      MPI_Finalize();
+      return 1;
+    }
   if (myid == 0)
     {
       args.PrintOptions(cout);
     }
   //lecture du malliage
-
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
-int rep = 8;
-  for (int r = 0; r < rep; r++){
+
+  for (int r = 0; r < ref_levels; r++)
+{
       mesh->UniformRefinement();
 }
+
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
   // Read the mesh from the given mesh file. We can handle triangular,
   //    quadrilateral, tetrahedral or hexahedral elements with the same code.
@@ -213,7 +217,7 @@ int rep = 8;
     {
       cout << "r.h.s. ... " << flush;
     }
-  
+
   //  Set up the bilinear form a(.,.) on the finite element space
   //    corresponding to the linear elasticity integrator with piece-wise
   //    constants coefficient lambda and mu.
@@ -235,7 +239,6 @@ int rep = 8;
   
   HypreParMatrix A;
   Vector B, X;
-  
   a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);  
   if (myid == 0)
     {
@@ -267,6 +270,10 @@ int rep = 8;
   }   
   // Recover the solution as a finite element grid function.
   a->RecoverFEMSolution(X, *b, x);
+  if (!use_nodal_fespace)
+    {
+      pmesh->SetNodalFESpace(fespace);
+    }
 
   // Compute norms of error
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
@@ -280,6 +287,15 @@ int rep = 8;
       cout << "Energy norm of error: " << ener_error <<" Taille de maille= "
 	   <<h<< endl<<endl;
     }
+  //  free the used memory.
+  delete a;
+  delete b;
+  if (fec)
+    {
+      delete fec;
+    }
+  delete mesh;
+  delete pmesh;
   MPI_Finalize();
   return 0;
 }
