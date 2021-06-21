@@ -87,13 +87,13 @@ int main(int argc, char *argv[])
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   // Parse command-line options.
-  const char *mesh_file = "hole_mesh/quarter_phole0.msh";
+  const char *mesh_file = "hole_mesh/quarter_phole00.msh";
   bool static_cond = false;
   int order = 1;
   bool amg_elast = 0;
   bool reorder_space = false;
   bool iterative = true;
-  int ref_levels = 2;
+  int ref_levels = 0;
   OptionsParser args(argc, argv);
   args.AddOption(&mesh_file, "-m", "--mesh",
  		 "mesh file to use.");
@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
   // List of True DoFs : Define (here) Dirichlet conditions
   Array<int> ess_tdof_list, tmp_tdof, ess_bdr(pmesh->bdr_attributes.Max());
   ess_bdr = 0;
-  ess_bdr[3] = 1;	//droite
+  ess_bdr[4] = 1;	//droite
   fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
   // ess_tof_list accumulates all needed dof
   ess_tdof_list.Append(tmp_tdof);
@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
   Array<int> bdr_attr_marker_neu(pmesh->bdr_attributes.Max());
   // values for neumann boundary conditions are set within boundary function
   bdr_attr_marker_neu = 0;
-  bdr_attr_marker_neu[4] = 1;	//gauche
+  bdr_attr_marker_neu[5] = 1;	//gauche
   bdr_attr_marker_neu[0] = 1;	//bas
   VectorArrayCoefficient fo(dim);
   fo.Set(1, new FunctionCoefficient(NeumannBdr_y));
@@ -281,7 +281,7 @@ int main(int argc, char *argv[])
   VectorFunctionCoefficient Stress_exactepol_coef(tdim,Stress_exactePol);
   double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func,
 					Stress_exactepol_coef);
-  double h = StepMax(*pmesh);	//recherche pas max
+  double h = StepMax(*mesh);	//recherche pas max
   if (myid == 0)
     {
       cout << "Energy norm of error: " << ener_error <<" Taille de maille= "
