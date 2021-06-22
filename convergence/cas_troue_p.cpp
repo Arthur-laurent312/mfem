@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
   // List of True DoFs : Define (here) Dirichlet conditions
   Array<int> ess_tdof_list, tmp_tdof, ess_bdr(pmesh->bdr_attributes.Max());
   ess_bdr = 0;
-  ess_bdr[4] = 1;	//droite
+  ess_bdr[3] = 1;	//droite
   fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
   // ess_tof_list accumulates all needed dof
   ess_tdof_list.Append(tmp_tdof);
@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
   Array<int> bdr_attr_marker_neu(pmesh->bdr_attributes.Max());
   // values for neumann boundary conditions are set within boundary function
   bdr_attr_marker_neu = 0;
-  bdr_attr_marker_neu[5] = 1;	//gauche
+  bdr_attr_marker_neu[4] = 1;	//gauche
   bdr_attr_marker_neu[0] = 1;	//bas
   VectorArrayCoefficient fo(dim);
   fo.Set(1, new FunctionCoefficient(NeumannBdr_y));
