@@ -14,7 +14,10 @@
 //Version Parallèle
 #include "mfem.hpp"
 #include <fstream>
+#include <stdlib.h>
+#include <stdio.h>
 #include <iostream>
+#include <time.h>
 
 using namespace std;
 using namespace mfem;
@@ -81,6 +84,7 @@ public:
 
 int main(int argc, char *argv[])
 {
+  int time = 0;
   // initialize mpi.
   int num_procs, myid;
   MPI_Init(&argc, &argv);
@@ -262,8 +266,6 @@ int main(int argc, char *argv[])
     pcg->SetPrintLevel(2);
     pcg->SetPreconditioner(*amg);
     pcg->Mult(B, X);
-    delete pcg;
-    delete amg;
   }
   else{
     cout<<"solver direct non implémenté"<<endl;
@@ -292,11 +294,14 @@ int main(int argc, char *argv[])
   delete b;
   if (fec)
     {
+	  delete fespace;
       delete fec;
     }
   delete mesh;
   delete pmesh;
   MPI_Finalize();
+  time = clock();
+  printf("Temps d'execution = %d ms \n", time);
   return 0;
 }
 void conversion(const double x, const double y , double &r, double &theta)
@@ -453,6 +458,7 @@ double ComputeEnergyNorm(ParGridFunction &x, Coefficient &lambdah,
   if(error_global>0.0){
     return sqrt(error_global);}
   else{
+	MPI_Finalize();
     exit(0);
   }
 }
