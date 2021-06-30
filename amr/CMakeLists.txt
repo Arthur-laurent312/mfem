@@ -1,0 +1,14 @@
+list(APPEND ALL_EXE_SRCS
+	ex2_boucle.cpp
+	ex2_boucle_amr.cpp
+	compare_boucle.cpp
+	troueAMR.cpp
+	troue.cpp
+  )
+
+
+# Include the source directory where mfem.hpp and mfem-performance.hpp are.
+include_directories(BEFORE ${PROJECT_BINARY_DIR})
+
+# Add one executable per cpp file
+add_mfem_examples(ALL_EXE_SRCS)
