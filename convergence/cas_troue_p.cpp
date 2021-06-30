@@ -82,12 +82,21 @@ public:
   virtual double Eval(ElementTransformation &T, const IntegrationPoint &ip);
 };
 
+#define USE_PROFILER 1
+#define LIB_PROFILER_IMPLEMENTATION
+#define LIB_PROFILER_PRINTF MpiPrintf
+//#include <mpi.h>
+#include "libProfiler.h"
+
 int main(int argc, char *argv[])
 {
   int time = 0;
+  PROFILER_ENABLE;
   // initialize mpi.
   int num_procs, myid;
   MPI_Init(&argc, &argv);
+  MPI_Barrier(MPI_COMM_WORLD);
+  PROFILER_START(0_initialize);
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
   // Parse command-line options.
@@ -128,19 +137,20 @@ int main(int argc, char *argv[])
     {
       args.PrintOptions(cout);
     }
+   PROFILER_END(); PROFILER_START(1_read_mesh);
   //lecture du malliage
   Mesh *mesh = new Mesh(mesh_file, 1, 1);
 
   for (int r = 0; r < ref_levels; r++)
-{
+    {
       mesh->UniformRefinement();
-}
+    }
 
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
   // Read the mesh from the given mesh file. We can handle triangular,
   //    quadrilateral, tetrahedral or hexahedral elements with the same code.
   int dim = mesh->Dimension();
-  
+  PROFILER_END(); PROFILER_START(2_initialize_fem);
   // Define a finite element space on the mesh. Here we use vector finite
   //    elements, i.e. dim copies of a scalar finite element space. The vector
   //    dimension is specified by the last argument of the FiniteElementSpace
@@ -231,7 +241,7 @@ int main(int argc, char *argv[])
   ParBilinearForm *a = new ParBilinearForm(fespace);
   BilinearFormIntegrator *integ = new ElasticityIntegrator(lambda_func, mu_func);
   a->AddDomainIntegrator(integ);
-  
+  PROFILER_END(); PROFILER_START(3_assembly);
   //  Assemble the bilinear form and the corresponding linear system,
   //     applying any necessary transformations such as: eliminating boundary
   //     conditions, applying conforming constraints for non-conforming AMR,
@@ -240,7 +250,9 @@ int main(int argc, char *argv[])
   if (static_cond) { a->EnableStaticCondensation(); }
   a->Assemble();
   b->Assemble();
-  
+
+  PROFILER_END(); PROFILER_START(4_hypre_solve);
+
   HypreParMatrix A;
   Vector B, X;
   a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);  
@@ -276,7 +288,8 @@ int main(int argc, char *argv[])
     {
       pmesh->SetNodalFESpace(fespace);
     }
-
+  PROFILER_END(); PROFILER_START(5_mesh_saving);
+#ifdef POSTP
   // Compute norms of error
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
   VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart);
@@ -289,19 +302,27 @@ int main(int argc, char *argv[])
       cout << "Energy norm of error: " << ener_error <<" Taille de maille= "
 	   <<h<< endl<<endl;
     }
+#endif
+   PROFILER_END();
+   LogProfiler();
+
+   PROFILER_DISABLE;
   //  free the used memory.
   delete a;
   delete b;
   if (fec)
     {
-	  delete fespace;
+      delete fespace;
       delete fec;
     }
   delete mesh;
   delete pmesh;
   MPI_Finalize();
   time = clock();
-  printf("Temps d'execution = %d ms \n", time);
+  if (myid == 0)
+    {
+  printf("Temps d'execution = %d 10^-5s \n", time);
+	}
   return 0;
 }
 void conversion(const double x, const double y , double &r, double &theta)
@@ -458,7 +479,7 @@ double ComputeEnergyNorm(ParGridFunction &x, Coefficient &lambdah,
   if(error_global>0.0){
     return sqrt(error_global);}
   else{
-	MPI_Finalize();
+    MPI_Finalize();
     exit(0);
   }
 }
