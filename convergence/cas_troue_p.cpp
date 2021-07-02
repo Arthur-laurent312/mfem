@@ -289,7 +289,7 @@ int main(int argc, char *argv[])
       pmesh->SetNodalFESpace(fespace);
     }
   PROFILER_END(); PROFILER_START(5_mesh_saving);
-#ifdef POSTP
+
   // Compute norms of error
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
   VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart);
@@ -302,7 +302,7 @@ int main(int argc, char *argv[])
       cout << "Energy norm of error: " << ener_error <<" Taille de maille= "
 	   <<h<< endl<<endl;
     }
-#endif
+
    PROFILER_END();
    LogProfiler();
 
