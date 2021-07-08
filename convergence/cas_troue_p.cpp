@@ -85,7 +85,7 @@ public:
 #define USE_PROFILER 1
 #define LIB_PROFILER_IMPLEMENTATION
 #define LIB_PROFILER_PRINTF MpiPrintf
-//#include <mpi.h>
+#include <mpi.h>
 #include "libProfiler.h"
 
 int main(int argc, char *argv[])
@@ -251,7 +251,7 @@ int main(int argc, char *argv[])
   a->Assemble();
   b->Assemble();
 
-  PROFILER_END(); PROFILER_START(4_hypre_solve);
+  PROFILER_END(); PROFILER_START(4_solve);
 
   HypreParMatrix A;
   Vector B, X;
@@ -288,7 +288,10 @@ int main(int argc, char *argv[])
     {
       pmesh->SetNodalFESpace(fespace);
     }
-  PROFILER_END(); PROFILER_START(5_mesh_saving);
+   PROFILER_END();
+   LogProfiler();
+
+   PROFILER_DISABLE;
 
   // Compute norms of error
   int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
@@ -303,10 +306,7 @@ int main(int argc, char *argv[])
 	   <<h<< endl<<endl;
     }
 
-   PROFILER_END();
-   LogProfiler();
 
-   PROFILER_DISABLE;
   //  free the used memory.
   delete a;
   delete b;
@@ -317,12 +317,13 @@ int main(int argc, char *argv[])
     }
   delete mesh;
   delete pmesh;
-  MPI_Finalize();
+
   time = clock();
   if (myid == 0)
     {
   printf("Temps d'execution = %d 10^-5s \n", time);
 	}
+  MPI_Finalize();
   return 0;
 }
 void conversion(const double x, const double y , double &r, double &theta)
