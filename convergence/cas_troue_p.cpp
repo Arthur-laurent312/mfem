@@ -289,8 +289,10 @@ int main(int argc, char *argv[])
       pmesh->SetNodalFESpace(fespace);
     }
    PROFILER_END();
+  if (myid == 0)
+    {
    LogProfiler();
-
+    }
    PROFILER_DISABLE;
 
   // Compute norms of error
