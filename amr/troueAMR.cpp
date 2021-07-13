@@ -14,6 +14,8 @@
 #include "mfem.hpp"
 #include <fstream>
 #include <iostream>
+#include <chrono>
+#include <ctime>
 
 using namespace std;
 using namespace mfem;
@@ -42,11 +44,9 @@ double ComputeEnergyNorm(GridFunction &,
 			 VectorFunctionCoefficient &, Vector &);
 //Calcul erreur absolue
 double ComputeAbsoluErr(GridFunction &, 
-			Coefficient &, Coefficient &, 
-			double &);
+			double &,double &);
 double ComputeRelativErr(GridFunction &, 
-			Coefficient &, Coefficient &, 
-			double &);
+			 double &,double &);
 Vector SaveError(const Vector &);
 //Matrice d'élaticité
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &,
@@ -92,6 +92,9 @@ public:
 
 int main(int argc, char *argv[])
 {
+  std::chrono::duration<double> time1;
+  auto start1 = std::chrono::system_clock::now();
+
   DenseMatrix slope_ener;
   double err_tmp_ener = 0;
   double h_tmp = 0.;
@@ -217,22 +220,22 @@ int main(int argc, char *argv[])
   int it;
   for (it = 1; it<itermax ; it++){		// Boucle raffinement
 
-  //  Determine the list of true (i.e. conforming) essential boundary dofs.
-  //    In this example, the boundary conditions are defined by marking only
-  //    boundary attribute 1 from the mesh as essential and converting it to a
-  //    list of true dofs.
-  // List of True DoFs : Define (here) Dirichlet conditions
-  Array<int> ess_tdof_list, tmp_tdof, ess_bdr(mesh->bdr_attributes.Max());
-  ess_bdr = 0;
-  ess_bdr[3] = 1;	//droite
-  fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
-  // ess_tof_list accumulates all needed dof
-  ess_tdof_list.Append(tmp_tdof);
-  ess_bdr = 0;
-  ess_bdr[1] = 1;	//haut
-  fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 0);
-  // ess_tof_list accumulates all needed dof
-  ess_tdof_list.Append(tmp_tdof);
+    //  Determine the list of true (i.e. conforming) essential boundary dofs.
+    //    In this example, the boundary conditions are defined by marking only
+    //    boundary attribute 1 from the mesh as essential and converting it to a
+    //    list of true dofs.
+    // List of True DoFs : Define (here) Dirichlet conditions
+    Array<int> ess_tdof_list, tmp_tdof, ess_bdr(mesh->bdr_attributes.Max());
+    ess_bdr = 0;
+    ess_bdr[3] = 1;	//droite
+    fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 1); 
+    // ess_tof_list accumulates all needed dof
+    ess_tdof_list.Append(tmp_tdof);
+    ess_bdr = 0;
+    ess_bdr[1] = 1;	//haut
+    fespace->GetEssentialTrueDofs(ess_bdr, tmp_tdof, 0);
+    // ess_tof_list accumulates all needed dof
+    ess_tdof_list.Append(tmp_tdof);
 
     x = 0.0;
     int cdofs = fespace->GetTrueVSize();
@@ -270,14 +273,21 @@ int main(int argc, char *argv[])
     a->RecoverFEMSolution(X, *b, x);
     if (cdofs > max_dofs)
       {
-	cout << "Reached the maximum number of dofs. Stop." << endl;
+	cout << "Reachedh the maximum number of dofs. Stop." << endl;
 	break;
       }
 
-	//Définition du seuil AMR
-  double err_abs = ComputeAbsoluErr(x, lambda_func, mu_func, err_goal);
-  refiner.SetLocalErrorGoal(err_abs);
+    //Définition du seuil AMR
+    VectorFunctionCoefficient Const_coef1(tdim,Stress_exacteCart,
+					  new ConstantCoefficient(0.0));
+    Vector errVec1;
+    double ener_error_ = ComputeEnergyNorm(x, lambda_func, mu_func,
+					   Const_coef1,errVec1);
 
+    double err_abs = ComputeAbsoluErr(x, ener_error_, err_goal);
+    //refiner.SetLocalErrorGoal(err_goal/sqrt(fespace->GetNE()));
+    refiner.SetLocalErrorGoal(err_abs);
+    cout << "Error goal: "<< refiner.GetThreshold() << endl;
     //===========Raffinement du maillage=================
     refiner.Apply(*mesh);
     if (refiner.Stop())
@@ -285,37 +295,51 @@ int main(int argc, char *argv[])
 	cout << "Stopping criterion satisfied. Stop." << endl;
 	break;
       }
-cout<<"threshold "<<refiner.GetThreshold()<<endl;
+
     fespace->Update();
     x.Update();
     a->Update();
     b->Update();
   }//end reffine loop
+  auto end1 = std::chrono::system_clock::now();
+  time1 = end1 - start1;
+  cout << "Time : " << time1.count()*1000.0 << " ms" << endl;
 
   cout<<endl<<"Number of reffinement iterations: "<<it<<endl;
   // Compute norms of error
-  VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart);
+  GridFunction zero(fespace);
+  zero =0.0;
   VectorFunctionCoefficient Stress_exactepol_coef(tdim,Stress_exactePol);
   Vector err_exacte(fespace->GetNE());
+  double ener_refer = ComputeEnergyNorm(zero, lambda_func, mu_func,
+					Stress_exactepol_coef,err_exacte);
   double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func,
 					Stress_exactepol_coef,err_exacte);
-  cout << "Energy norm of error: "<< ener_error << endl;
-  cout << "ZZ total error: "<< estimator.GetTotalError() << endl;
+
+  cout << "Energy norm of error: "<< ener_error/ener_refer << endl;
+  cout << "Error goal: "<< refiner.GetThreshold()*sqrt(fespace->GetNE()) << endl;
+  cout << "Numbre of DOFS: "<< fespace->GetNDofs() << endl;
   cout << endl;
   double h = StepMax(*mesh);	//recherche pas max
 
+  //Passage erreur relatif -> absolue
+  VectorFunctionCoefficient Const_coef(tdim,Stress_exacteCart,
+				       new ConstantCoefficient(0.0));
+  Vector errVec1;
+  double ener_error1 = ComputeEnergyNorm(x, lambda_func, mu_func,
+					 Const_coef,errVec1);
   Vector err_exacte_rela(err_exacte.Size()), err_estim_rela(err_exacte.Size());
   Vector tmp_estim = estimator.GetLocalErrors();
   for(int i=0; i<err_exacte.Size(); i++){
-  err_exacte_rela(i) = ComputeRelativErr(x, lambda_func, mu_func, err_exacte(i));
-  err_estim_rela(i) = ComputeRelativErr(x, lambda_func, mu_func, tmp_estim(i));
+    err_exacte_rela(i) = ComputeRelativErr(x, ener_error1, err_exacte(i));
+    err_estim_rela(i) = ComputeRelativErr(x, ener_error1, tmp_estim(i));
   }
 
   //Save errors gnulplot format
   string const erreur("erreur_amr.txt");
   ofstream erreur_flux(erreur.c_str());
   if (!erreur_flux.is_open()) {
-    cout << "Problem in openning file" << endl;
+    cout << "Problem in openning file: erreur_amr.txt" << endl;
     exit(0);
   }
   else{
@@ -335,7 +359,7 @@ cout<<"threshold "<<refiner.GetThreshold()<<endl;
 	coordAVGx(i) /= nv;
 	coordAVGy(i) /= nv;
 	erreur_flux<<coordAVGx(i)<<" "<<coordAVGy(i)<<" "<<err_exacte_rela(i)
-	<<" "<<err_estim_rela(i)<<endl;
+		   <<" "<<tmp_estim(i)<<endl;
       }
   }
 
@@ -373,8 +397,6 @@ cout<<"threshold "<<refiner.GetThreshold()<<endl;
   fieldspace_e = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
   GridFunction stress_exactepol(fieldspace_e);
   stress_exactepol.ProjectCoefficient(Stress_exactepol_coef);
-  GridFunction stress_exactecart(fieldspace_e);
-  stress_exactecart.ProjectCoefficient(Stress_exactecart_coef);
 
   GridFunction err_grid(fieldspace, estimator.GetLocalErrors().GetData());
   GridFunction err_grid_exacte(fieldspace, err_exacte.GetData());
@@ -503,30 +525,14 @@ void Strain_(DenseMatrix &grad, Vector &strain)
     cout<<"Dimention not suported"<<endl;}
 }
 //===================== Calcul erreur absolue =====================
-double ComputeRelativErr(GridFunction &x, Coefficient &lambdah, Coefficient &muh,
-		 double &absolu_err)
+double ComputeRelativErr(GridFunction &x, double &ener_error, double &absolu_err)
 {
-  const int dim = x.VectorDim();
-  const int tdim = dim*(dim+1)/2;
-  VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart,
-						   new ConstantCoefficient(0.0));
-  Vector errVec;
-  double ener_error = ComputeEnergyNorm(x, lambdah, muh,
-					Stress_exactecart_coef,errVec);
-  return (absolu_err)/ener_error*100;
+  return (absolu_err)/ener_error;
 }
 
-double ComputeAbsoluErr(GridFunction &x, Coefficient &lambdah, Coefficient &muh,
-		 double &relative_err)
+double ComputeAbsoluErr(GridFunction &x, double &ener_error,double &relative_err)
 {
-  const int dim = x.VectorDim();
-  const int tdim = dim*(dim+1)/2;
-  VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart,
-						   new ConstantCoefficient(0.0));
-  Vector errVec;
-  double ener_error = ComputeEnergyNorm(x, lambdah, muh,
-					Stress_exactecart_coef,errVec);
-	return (relative_err/100.)*ener_error;
+  return relative_err*ener_error/100;
 }
 
 //==============Erreur en Norme energie ===================
@@ -578,7 +584,7 @@ double ComputeEnergyNorm(GridFunction &x, Coefficient &lambdah, Coefficient &muh
       errVec(i) = 0.5*sqrt(energy_);
     }
   if(energy>0.0){
-    return 0.5*sqrt(energy);}
+    return sqrt(energy);}
   else{
     cout<<"Negative Energy error"<<endl;
     exit(0);

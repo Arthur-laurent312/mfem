@@ -14,6 +14,8 @@
 #include "mfem.hpp"
 #include <fstream>
 #include <iostream>
+#include <chrono>
+#include <ctime>
 
 using namespace std;
 using namespace mfem;
@@ -42,8 +44,8 @@ double ComputeEnergyNorm(GridFunction &,
 			 VectorFunctionCoefficient &);
 //Calcul erreur absolue
 double ComputeAbsoluErr(GridFunction &, 
-				Coefficient &, Coefficient &, 
-				double &);
+			Coefficient &, Coefficient &, 
+			double &);
 //Matrice d'élaticité
 void Elasticy_mat(ElementTransformation &,const IntegrationPoint &,
 		  double &, double &, DenseMatrix &);
@@ -88,6 +90,9 @@ public:
 
 int main(int argc, char *argv[])
 {
+  std::chrono::duration<double> time1;
+  auto start1 = std::chrono::system_clock::now();
+
   DenseMatrix slope_ener;
   double err_tmp_ener = 0;
   double h_tmp = 0.;
@@ -99,8 +104,8 @@ int main(int argc, char *argv[])
   int rep = 1;
   const char *mesh_file1 = "hole_mesh/quarter_phole1.msh";
   OptionsParser args(argc, argv);
-   args.AddOption(&mesh_file1, "-m", "--mesh",
-                  "Mesh file to use.");
+  args.AddOption(&mesh_file1, "-m", "--mesh",
+		 "Mesh file to use.");
   args.AddOption(&order, "-o", "--order",
 		 "Finite element order (polynomial degree).");
   args.AddOption(&rep, "-r", "--repet",
@@ -117,21 +122,21 @@ int main(int argc, char *argv[])
     }
   args.PrintOptions(cout);
   slope_ener.SetSize(rep,3);
-Mesh *mesh = new Mesh(mesh_file1, 1, 1);
+  Mesh *mesh = new Mesh(mesh_file1, 1, 1);
   for (int r = 0; r < rep; r++){
-if( rep > 1) {
-    string  mesh_file = "hole_mesh/quarter_phole";
-    string buf(mesh_file);
-    string X_(to_string(r));
-    buf.append(X_);
-    string buff(buf);
-    string mesh_file2 = ".msh";
-    buff.append(mesh_file2);
+    if( rep > 1) {
+      string  mesh_file = "hole_mesh/quarter_phole";
+      string buf(mesh_file);
+      string X_(to_string(r));
+      buf.append(X_);
+      string buff(buf);
+      string mesh_file2 = ".msh";
+      buff.append(mesh_file2);
 
-    char* mesh_file_ = &buff[0];
-    cout<<"Nom du maillage: "<<mesh_file_<<endl;
-    Mesh *mesh = new Mesh(mesh_file_, 1, 1);
-}
+      char* mesh_file_ = &buff[0];
+      cout<<"Nom du maillage: "<<mesh_file_<<endl;
+      Mesh *mesh = new Mesh(mesh_file_, 1, 1);
+    }
     // Read the mesh from the given mesh file. We can handle triangular,
     //    quadrilateral, tetrahedral or hexahedral elements with the same code.
     int dim = mesh->Dimension();
@@ -237,6 +242,10 @@ if( rep > 1) {
     }
     // Recover the solution as a finite element grid function.
     a->RecoverFEMSolution(X, *b, x);
+
+    auto end1 = std::chrono::system_clock::now();
+    time1 = end1 - start1;
+    cout << "Time : " << time1.count()*1000.0 << " ms" << endl;
 
     // Compute norms of error
     int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
@@ -430,13 +439,13 @@ void Strain_(DenseMatrix &grad, Vector &strain)
 }
 //===================== Calcul erreur absolue =====================
 double ComputeAbsoluErr(GridFunction &x, Coefficient &lambdah, Coefficient &muh, double &relative_goal){
-	const int dim = x.VectorDim();
-	const int tdim = dim*(dim+1)/2;
-	VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart,
-		new ConstantCoefficient(0.0));
-   double ener_error = ComputeEnergyNorm(x, lambdah, muh,
-					  Stress_exactecart_coef);
-	return relative_goal*ener_error;
+  const int dim = x.VectorDim();
+  const int tdim = dim*(dim+1)/2;
+  VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart,
+						   new ConstantCoefficient(0.0));
+  double ener_error = ComputeEnergyNorm(x, lambdah, muh,
+					Stress_exactecart_coef);
+  return relative_goal*ener_error;
 }
 
 //==============Erreur en Norme energie ===================
