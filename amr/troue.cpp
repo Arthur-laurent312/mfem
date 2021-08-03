@@ -90,8 +90,6 @@ public:
 
 int main(int argc, char *argv[])
 {
-  std::chrono::duration<double> time1;
-  auto start1 = std::chrono::system_clock::now();
 
   DenseMatrix slope_ener;
   double err_tmp_ener = 0;
@@ -124,7 +122,7 @@ int main(int argc, char *argv[])
   slope_ener.SetSize(rep,3);
   Mesh *mesh = new Mesh(mesh_file1, 1, 1);
   for (int r = 0; r < rep; r++){
-    if( rep > 1) {
+    /*
       string  mesh_file = "hole_mesh/quarter_phole";
       string buf(mesh_file);
       string X_(to_string(r));
@@ -136,7 +134,7 @@ int main(int argc, char *argv[])
       char* mesh_file_ = &buff[0];
       cout<<"Nom du maillage: "<<mesh_file_<<endl;
       Mesh *mesh = new Mesh(mesh_file_, 1, 1);
-    }
+    */
     // Read the mesh from the given mesh file. We can handle triangular,
     //    quadrilateral, tetrahedral or hexahedral elements with the same code.
     int dim = mesh->Dimension();
@@ -197,7 +195,8 @@ int main(int argc, char *argv[])
     fo.Set(1, new FunctionCoefficient(NeumannBdr_y));
     fo.Set(0, new FunctionCoefficient(NeumannBdr_x));
     LinearForm *b = new LinearForm(fespace);
-    b->AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(fo),bdr_attr_marker_neu);
+    b->AddBoundaryIntegrator(new
+			     VectorBoundaryLFIntegrator(fo),bdr_attr_marker_neu);
     cout << "r.h.s. ... " << flush;
   
     //  Set up the bilinear form a(.,.) on the finite element space
@@ -209,7 +208,9 @@ int main(int argc, char *argv[])
     BilinearForm *a = new BilinearForm(fespace);
     BilinearFormIntegrator *integ = new ElasticityIntegrator(lambda_func, mu_func);
     a->AddDomainIntegrator(integ);
-  
+
+    std::chrono::duration<double> time1;
+    auto start1 = std::chrono::system_clock::now();
     //  Assemble the bilinear form and the corresponding linear system,
     //     applying any necessary transformations such as: eliminating boundary
     //     conditions, applying conforming constraints for non-conforming AMR,
@@ -250,16 +251,21 @@ int main(int argc, char *argv[])
     // Compute norms of error
     int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
     VectorFunctionCoefficient Stress_exactecart_coef(tdim,Stress_exacteCart);
+    GridFunction zero(fespace);
+    zero = 0.0;
     VectorFunctionCoefficient Stress_exactepol_coef(tdim,Stress_exactePol);
+    double ener_refer = ComputeEnergyNorm(zero, lambda_func, mu_func,
+					  Stress_exactepol_coef);
     double ener_error = ComputeEnergyNorm(x, lambda_func, mu_func,
 					  Stress_exactepol_coef);
-
+    ener_error = ener_error/ener_refer;
     cout << "Energy norm of error: " << ener_error << endl;
+    cout << "Numbre of DOFS: "<< fespace->GetNDofs() << endl;
     cout << endl;
     double h = StepMax(*mesh);	//recherche pas max
     //Compute the slope
-    slope_ener(iter,0) = log(err_tmp_ener/ener_error) / log(h_tmp/h);
-    slope_ener(iter,1) = h;
+    slope_ener(iter,0) = time1.count()*1000.0;
+    slope_ener(iter,1) = fespace->GetNDofs();
     slope_ener(iter,2) = ener_error;
     err_tmp_ener = ener_error;
     h_tmp = h;
@@ -273,50 +279,47 @@ int main(int argc, char *argv[])
       }
     //GridFunction *nodes = mesh->GetNodes();
     //*nodes += x;
-    FiniteElementSpace *fieldspace;
-    fieldspace = new FiniteElementSpace(mesh, fec, 1, Ordering::byVDIM);
-    ParaViewDataCollection paraview_dc("Troue", mesh);
-    paraview_dc.SetPrefixPath("ParaView");
-    std::string letters = "xyz";
-    Array<GridFunction *> stress(dim*(dim+1)/2);
-    StressCoefficient stress_c(lambda_func, mu_func);
-    stress_c.SetDisplacement(x);
-    int c = 0;
-    for (int si = 0; si < dim; si++)
+    /*
+      FiniteElementSpace *fieldspace;
+      fieldspace = new FiniteElementSpace(mesh, fec, 1, Ordering::byVDIM);
+      ParaViewDataCollection paraview_dc("Troue", mesh);
+      paraview_dc.SetPrefixPath("ParaView");
+      std::string letters = "xyz";
+      Array<GridFunction *> stress(dim*(dim+1)/2);
+      StressCoefficient stress_c(lambda_func, mu_func);
+      stress_c.SetDisplacement(x);
+      int c = 0;
+      for (int si = 0; si < dim; si++)
       {
-	for (int sj = si; sj < dim; sj++)
-	  {
-	    std::string stressname= "S" + letters.substr(si,1) +
-	      letters.substr(sj,1);
-	    stress[c] = new GridFunction(fieldspace);
-	    stress_c.SetComponent(si, sj);
-	    stress[c]->ProjectDiscCoefficient(stress_c, GridFunction::ARITHMETIC);
-	    paraview_dc.RegisterField(stressname,stress[c]);
-	    std::string strainname= (si != sj ? "G" : "E") + letters.substr(si,1) +
-	      letters.substr(sj,1);
-	  }}
-    //Stress exacte
-    FiniteElementSpace *fieldspace_e;
-    fieldspace_e = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
-    GridFunction stress_exactepol(fieldspace_e);
-    stress_exactepol.ProjectCoefficient(Stress_exactepol_coef);
-    GridFunction stress_exactecart(fieldspace_e);
-    stress_exactecart.ProjectCoefficient(Stress_exactecart_coef);
-    paraview_dc.SetLevelsOfDetail(order+1);
-    paraview_dc.SetCycle(0);
-    paraview_dc.SetDataFormat(VTKFormat::BINARY);
-    paraview_dc.SetHighOrderOutput(true);
-    paraview_dc.SetTime(0.0); // set the time
-    paraview_dc.RegisterField("numerical_solution",&x);
-    paraview_dc.RegisterField("Stress exacte cartésien",&stress_exactecart);
-    paraview_dc.RegisterField("Stress exacte polaire",&stress_exactepol);
-    paraview_dc.Save();
-    delete a;
-    delete b;
-    if (fec) {
-      delete fespace;
-      delete fec;
-    }
+      for (int sj = si; sj < dim; sj++)
+      {
+      std::string stressname= "S" + letters.substr(si,1) +
+      letters.substr(sj,1);
+      stress[c] = new GridFunction(fieldspace);
+      stress_c.SetComponent(si, sj);
+      stress[c]->ProjectDiscCoefficient(stress_c, GridFunction::ARITHMETIC);
+      paraview_dc.RegisterField(stressname,stress[c]);
+      std::string strainname= (si != sj ? "G" : "E") + letters.substr(si,1) +
+      letters.substr(sj,1);
+      }}
+      //Stress exacte
+      FiniteElementSpace *fieldspace_e;
+      fieldspace_e = new FiniteElementSpace(mesh, fec, tdim, Ordering::byVDIM);
+      GridFunction stress_exactepol(fieldspace_e);
+      stress_exactepol.ProjectCoefficient(Stress_exactepol_coef);
+      GridFunction stress_exactecart(fieldspace_e);
+      stress_exactecart.ProjectCoefficient(Stress_exactecart_coef);
+      paraview_dc.SetLevelsOfDetail(order+1);
+      paraview_dc.SetCycle(0);
+      paraview_dc.SetDataFormat(VTKFormat::BINARY);
+      paraview_dc.SetHighOrderOutput(true);
+      paraview_dc.SetTime(0.0); // set the time
+      paraview_dc.RegisterField("numerical_solution",&x);
+      paraview_dc.RegisterField("Stress exacte cartésien",&stress_exactecart);
+      paraview_dc.RegisterField("Stress exacte polaire",&stress_exactepol);
+      paraview_dc.Save();*/
+
+    mesh->UniformRefinement();
   }//Fin de boucle maillage
 
   //Affichage des normes et pentes.

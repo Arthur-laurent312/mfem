@@ -8257,7 +8257,6 @@ void Mesh::NonconformingRefinement(const Array<Refinement> &refinements,
                "not supported. Project the NURBS to Nodes first.");
 
    ResetLazyData();
-
    if (!ncmesh)
    {
       // start tracking refinement hierarchy
@@ -8292,6 +8291,7 @@ void Mesh::NonconformingRefinement(const Array<Refinement> &refinements,
 
    last_operation = Mesh::REFINE;
    sequence++;
+
 
    if (Nodes) // update/interpolate curved mesh
    {

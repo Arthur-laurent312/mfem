@@ -98,6 +98,7 @@ int main(int argc, char *argv[])
     {
       mesh->UniformRefinement();
     }
+	  cout<<"Nb de dofs: "<<mesh->GetNE()<<endl;   
   //define parallel mesh by a partitioning of the serial mesh.
   ParMesh *pmesh = new ParMesh(MPI_COMM_WORLD, *mesh);
 
@@ -237,18 +238,23 @@ int main(int argc, char *argv[])
     }
 
   // compute errors
+HYPRE_Int global_dofs_ = fespace->GlobalTrueVSize();
+	  ParGridFunction zero(fespace);
+	  zero = 0.0;
+      double ener_reff = computeenergynorm(zero, lambda_func, mu_func);
   double h1_error = computeh1norm(x);
   double ener_error = computeenergynorm(x, lambda_func, mu_func);
   VectorFunctionCoefficient sol_exact_coef(dim, sol_exact);
   double l2_error = x.ComputeL2Error(sol_exact_coef);
 
-  double h = mesh->GetElementSize(1);
-  if (myid == 0)
+  double h = pmesh->GetElementSize(1);
+  if (myid == 1)
     {
       cout<<"erreur en norme l2: "<<l2_error<<endl;
-      cout<<"erreur en norme énergie: "<<ener_error<<endl;
+      cout<<"erreur en norme énergie: "<<ener_error/ener_reff<<endl;
       cout<<"erreur en norme h1: "<<h1_error<<endl;  
-      cout<<"taille de maille: "<<h<<endl;    
+      cout<<"taille de maille: "<<h<<endl; 
+	  cout<<"Nb de dofs: "<<fespace->GetNDofs()<<endl;   
       cout << "numbers of elements: " << pmesh->GetNE() <<endl;
     }
   //  free the used memory.
@@ -435,7 +441,7 @@ double computeenergynorm(ParGridFunction &x,
 	  energy_local += w * pdc;
  	}
     }
-  MPI_Reduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM, 0,
+  MPI_Allreduce(&energy_local, &energy_global, 1, MPI_DOUBLE, MPI_SUM,
  	     MPI_COMM_WORLD);
   if(energy_global>0.0){
     return sqrt(energy_global);}

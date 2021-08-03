@@ -4,6 +4,8 @@ list(APPEND ALL_EXE_SRCS
   cas_flexion.cpp
   cas_troue.cpp
   cas_troue_p.cpp
+  test_maillage_trouee.cpp
+  traceParabole.cpp
   )
 
 

@@ -537,6 +537,7 @@ set(MFEM_ALL_EXAMPLES_TARGET_NAME examples)
 add_mfem_target(${MFEM_ALL_EXAMPLES_TARGET_NAME} ${MFEM_ENABLE_EXAMPLES})
 add_subdirectory(examples EXCLUDE_FROM_ALL)
 add_subdirectory(convergence EXCLUDE_FROM_ALL)
+add_subdirectory(amr EXCLUDE_FROM_ALL)
 
 # Create a target for all miniapps and, optionally, enable it.
 set(MFEM_ALL_MINIAPPS_TARGET_NAME miniapps)
