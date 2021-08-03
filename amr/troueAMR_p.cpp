@@ -114,12 +114,7 @@ int main(int argc, char *argv[])
   auto start1 = std::chrono::system_clock::now();
   PROFILER_START(0_total);
   PROFILER_START(1_initialize_mesh);
-  /*
-    LIKWID_MARKER_INIT;
-    LIKWID_MARKER_REGISTER("construct");
-    LIKWID_MARKER_REGISTER("solve");
-    LIKWID_MARKER_REGISTER("refine");
-  */
+
   // Parse command-line options.
   bool static_cond = false;
   int order = 1;
@@ -286,7 +281,7 @@ int main(int argc, char *argv[])
     //    boundary attribute 1 from the mesh as essential and converting it to a
     //    list of true dofs.
     // List of True DoFs : Define (here) Dirichlet conditions
-    // LIKWID_MARKER_START("construct");
+
     if (myid == 0) { cout << "matrix ... " << flush; }
     Array<int> ess_tdof_list, tmp_tdof, ess_bdr(pmesh->bdr_attributes.Max());
     ess_bdr = 0;
@@ -314,8 +309,6 @@ int main(int argc, char *argv[])
     Vector B, X;
     a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);
 
-    //LIKWID_MARKER_STOP("construct");
-    //LIKWID_MARKER_START("solve");
     PROFILER_END(); PROFILER_START(3_2_solve_system);
     if (myid == 0) {cout<<"solve ... "<<flush; }
     HypreBoomerAMG amg(A);
@@ -326,7 +319,7 @@ int main(int argc, char *argv[])
     pcg.SetPrintLevel(0);
     pcg.SetPreconditioner(amg);
     pcg.Mult(B, X);
-    // LIKWID_MARKER_STOP("solve");
+
     // 18. Extract the local solution on each processor.
     a->RecoverFEMSolution(X, *b, x);
     PROFILER_END(); PROFILER_START(3_3_amr_refine);
@@ -347,9 +340,8 @@ int main(int argc, char *argv[])
 
     //===========Raffinement du maillage=================
     if (myid == 0) {cout<<"Refine ... "<<flush; }
-    //LIKWID_MARKER_START("refine");
     refiner.Apply(*pmesh);
-    // LIKWID_MARKER_STOP("refine");
+
     if (myid == 0) {cout<<"Update ... "<<endl<<endl; }
     PROFILER_END(); PROFILER_START(3_4_update);
     fespace->Update();
@@ -409,79 +401,6 @@ int main(int argc, char *argv[])
       cout << "Time : " << time1.count()*1000.0 << " ms" << endl;
       cout<<endl<<"Number of reffinement iterations: "<<it<<endl;
     }
-  //Save errors gnulplot format
-  string const erreur("valuesp.txt");
-  ofstream erreur_flux(erreur.c_str());
-  if (!erreur_flux.is_open()) {
-    cout << "Problem in openning file: erreur_amr.txt" << endl;
-    exit(0);
-  }
-  else{
-    int NE = pmesh->GetNE();
-    int count=0;
-    for (int i = 0; i < NE; i++)
-      {
-
-	erreur_flux<<tmp_estim(i)/ener_refer*sqrt(NE)<<" "<<endl;
-	if(tmp_estim(i)*sqrt(NE) > 
-	   err_goal/100*ener_refer)
-	  {
-	    count++;
-	  }
-	/*
-	  if(tmp_estim(i)*sqrt(NE) > 
-	  err_goal/100)
-	  {
-	  count++;
-	  erreur_flux<< tmp_estim(i)*sqrt(NE)-err_goal/100<<endl;
-	  }
-	  else{
-	  erreur_flux<< 0.<<endl;
-	  }
-	*/
-      }
-    if (myid == 0)
-      {
-	cout<<"Nombre d'éléments au dessus du seuil: " << count <<
-	  " soit "<< (double)count/(double)pmesh->GetNE()*100<<"%"<<endl;}
-  }
-  //Save errors gnulplot format
-  if (myid == 0)
-    {
-      cout<<"Erreur max: "<<tmp_estim.Max()/ener_refer*sqrt(pmesh->GetNE())
-	  <<" Nombre éléments: "<<pmesh->GetNE()<<endl;}
-
-  string const mesh_gnu("mesh_gnup.txt");
-  ofstream mesh_flux(mesh_gnu.c_str());
-  if (!mesh_flux.is_open()) {
-    cout << "Problem in openning file: mesh_gnu.txt" << endl;
-    exit(0);
-  }
-  else{
-    int NE = pmesh->GetNE();
-    DenseMatrix coord_(2*NE+1,4);
-    for (int i = 0; i < NE; i++)
-      {
-	Element *el = pmesh->GetElement(i);
-	int nv = el->GetNVertices();
-	int *v = el->GetVertices();
-	for (int j = 0; j < nv; j++)
-	  {
-	    const double *coord = pmesh->GetVertex(v[j]);
-	    coord_(2*i,j)=coord[0];
-	    coord_(2*i+1,j)=coord[1];
-	  }
-      }
-
-    for (int j = 0; j < 4; j++){
-      for (int i = 0; i < NE; i++)
-	{
-	  //mesh_flux<<coord_(2*i,j)<<" "<<coord_(2*i+1,j)<<" "<<tmp_estim(i)*sqrt(fespace->GetNE())<<" ";
-	  mesh_flux<<coord_(2*i,j)<<" "<<coord_(2*i+1,j)<<" ";	
-	}
-      mesh_flux<<endl;
-    }
-  }
   //Save in Praview format
   if (!mesh->NURBSext)
     {
