@@ -315,7 +315,7 @@ int main(int argc, char *argv[])
     amg.SetPrintLevel(0);
     HyprePCG pcg(A);
     pcg.SetTol(1e-12);
-    pcg.SetMaxIter(200);
+    pcg.SetMaxIter(5000);
     pcg.SetPrintLevel(0);
     pcg.SetPreconditioner(amg);
     pcg.Mult(B, X);
@@ -331,7 +331,6 @@ int main(int argc, char *argv[])
 					   Const_coef1,errVec1);
     const int NE = pmesh->GetNE();
     int NE_tot = NE;
-
     MPI_Allreduce(&NE, &NE_tot, 1, MPI_INT,
 		  MPI_SUM, MPI_COMM_WORLD);
 
