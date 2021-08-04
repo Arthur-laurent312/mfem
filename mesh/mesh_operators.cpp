@@ -139,7 +139,7 @@ int ThresholdRefiner::ApplyImpl(Mesh &mesh)
          }
       }
    }
-std::cout<<estimator.GetTotalError() <<" "<< threshold*sqrt(NE_tot)<<std::endl;
+//std::cout<<estimator.GetTotalError() <<" "<< threshold*sqrt(NE_tot)<<std::endl;
    num_marked_elements = mesh.ReduceInt(marked_elements.Size());
    if (estimator.GetTotalError() < threshold*sqrt(NE_tot))
 		 { return STOP; }
