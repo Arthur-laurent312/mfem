@@ -96,6 +96,7 @@ int main(int argc, char *argv[])
   int num_procs, myid;
   MPI_Init(&argc, &argv);
   MPI_Barrier(MPI_COMM_WORLD);
+  PROFILER_START(Total);
   PROFILER_START(0_initialize);
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
@@ -288,6 +289,7 @@ int main(int argc, char *argv[])
     {
       pmesh->SetNodalFESpace(fespace);
     }
+   PROFILER_END();
    PROFILER_END();
   if (myid == 0)
     {
