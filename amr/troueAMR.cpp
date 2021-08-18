@@ -263,16 +263,16 @@ int main(int argc, char *argv[])
 	GSSmoother M(A);
 	PCG(A, M, B, X, 2, 10000, 1e-12, 0.0);
       } else {
-  
+#ifdef MFEM_USE_SUITESPARSE	  
 	// If MFEM was compiled with SuiteSparse, use UMFPACK to solve the system.
 	UMFPackSolver umf_solver;
 	umf_solver.Control[UMFPACK_ORDERING] = UMFPACK_ORDERING_METIS;
 	umf_solver.SetOperator(A);
 	umf_solver.Mult(B, X);
-
+#else
 	cout<<"Direct solver not implemented" << endl;
 	exit(0);
-
+#endif
       }
       // Recover the solution as a finite element grid function.
       a->RecoverFEMSolution(X, *b, x);
