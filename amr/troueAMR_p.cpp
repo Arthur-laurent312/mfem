@@ -98,9 +98,6 @@ public:
 
 int main(int argc, char *argv[])
 {
-
-
-  int time = 0;
   PROFILER_ENABLE;
   // initialize mpi.
   int num_procs, myid;
@@ -110,8 +107,6 @@ int main(int argc, char *argv[])
   MPI_Comm_size(MPI_COMM_WORLD, &num_procs);
   MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
-  std::chrono::duration<double> time1;
-  auto start1 = std::chrono::system_clock::now();
   PROFILER_START(0_total);
   PROFILER_START(1_initialize_mesh);
 
@@ -194,8 +189,7 @@ int main(int argc, char *argv[])
   if (myid == 0)
     {
       cout << "Numbers of elements: " << pmesh->GetNE() <<endl;
-      cout << "number of finite element unknowns: " << Size << endl
-	   << "assembling: " << flush;
+	  cout << "assembling: " << flush;
     }
 
 
@@ -311,6 +305,7 @@ int main(int argc, char *argv[])
 
     PROFILER_END(); PROFILER_START(3_2_solve_system);
     if (myid == 0) {cout<<"solve ... "<<flush; }
+      if(iterative){
     HypreBoomerAMG amg(A);
     amg.SetPrintLevel(0);
     HyprePCG pcg(A);
@@ -319,7 +314,18 @@ int main(int argc, char *argv[])
     pcg.SetPrintLevel(0);
     pcg.SetPreconditioner(amg);
     pcg.Mult(B, X);
-
+      } else {
+#ifdef MFEM_USE_SUITESPARSE	  
+	// If MFEM was compiled with SuiteSparse, use UMFPACK to solve the system.
+	UMFPackSolver umf_solver;
+	umf_solver.Control[UMFPACK_ORDERING] = UMFPACK_ORDERING_METIS;
+	umf_solver.SetOperator(A);
+	umf_solver.Mult(B, X);
+#else
+	cout<<"Direct solver not implemented" << endl;
+	exit(0);
+#endif
+      }
     // 18. Extract the local solution on each processor.
     a->RecoverFEMSolution(X, *b, x);
     PROFILER_END(); PROFILER_START(3_3_amr_refine);
@@ -339,7 +345,7 @@ int main(int argc, char *argv[])
 
     //===========Raffinement du maillage=================
     if (myid == 0) {cout<<"Refine ... "<<flush; }
-    refiner.Apply(*pmesh);
+//    refiner.Apply(*pmesh);
 
     if (myid == 0) {cout<<"Update ... "<<endl<<endl; }
     PROFILER_END(); PROFILER_START(3_4_update);
@@ -370,8 +376,6 @@ int main(int argc, char *argv[])
       }
   }//end reffine loop
   PROFILER_END();
-  auto end1 = std::chrono::system_clock::now();
-  time1 = end1 - start1;
 
   PROFILER_END();
   if (myid == 0)
@@ -392,14 +396,9 @@ int main(int argc, char *argv[])
 	/ener_refer*100 << endl;
       cout << "Error Global référence: "<< ener_error/ener_refer*100 << endl;
       cout << "Number of DOFS: "<< global_dofs_ << endl;
-      cout << endl;
+	  cout<<endl<<"Number of reffinement iterations: "<<it<<endl;
     }
 
-  if (myid == 0)
-    {
-      cout << "Time : " << time1.count()*1000.0 << " ms" << endl;
-      cout<<endl<<"Number of reffinement iterations: "<<it<<endl;
-    }
   //Save in Praview format
   if (!mesh->NURBSext)
     {
