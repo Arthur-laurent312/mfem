@@ -17,6 +17,11 @@
 #include <chrono>
 #include <ctime>
 
+#define USE_PROFILER 1
+#define LIB_PROFILER_IMPLEMENTATION
+#define LIB_PROFILER_PRINTF MpiPrintf
+#include "libProfiler.h"
+
 using namespace std;
 using namespace mfem;
 
@@ -92,9 +97,6 @@ public:
 
 int main(int argc, char *argv[])
 {
-  std::chrono::duration<double> time1;
-  auto start1 = std::chrono::system_clock::now();
-
   DenseMatrix slope_ener;
   double err_tmp_ener = 0;
   double h_tmp = 0.;
@@ -106,7 +108,7 @@ int main(int argc, char *argv[])
   int rep = 1;
   double err_goal = 1.;
   int itermax = 100;
-  const char *mesh_file1 = "hole_mesh/quarter_phole1.msh";
+  const char *mesh_file1 = "hole_mesh/quarter_phole2.msh";
   OptionsParser args(argc, argv);
   args.AddOption(&mesh_file1, "-m", "--mesh",
 		 "Mesh file to use.");
@@ -154,6 +156,7 @@ int main(int argc, char *argv[])
     mesh->EnsureNCMesh(true);
     int dim = mesh->Dimension();
     const int tdim = dim*(dim+1)/2; // num. entries in a symmetric tensor
+
     // Define a finite element space on the mesh-> Here we use vector finite
     //    elements, i.e. dim copies of a scalar finite element space. The vector
     //    dimension is specified by the last argument of the FiniteElementSpace
@@ -255,21 +258,21 @@ int main(int argc, char *argv[])
       a->FormLinearSystem(ess_tdof_list, x, *b, A, X, B);  
       cout << "done." << endl << "Size of linear system: " <<
 	A.Height() << endl;
-  
+
       if(iterative){
 	GSSmoother M(A);
-	PCG(A, M, B, X, 2, 10000, 1e-20, 0.0);
+	PCG(A, M, B, X, 2, 10000, 1e-12, 0.0);
       } else {
-#ifdef MFEM_USE_SUITESPARSE	  
+  
 	// If MFEM was compiled with SuiteSparse, use UMFPACK to solve the system.
 	UMFPackSolver umf_solver;
 	umf_solver.Control[UMFPACK_ORDERING] = UMFPACK_ORDERING_METIS;
 	umf_solver.SetOperator(A);
 	umf_solver.Mult(B, X);
-#else
+
 	cout<<"Direct solver not implemented" << endl;
 	exit(0);
-#endif
+
       }
       // Recover the solution as a finite element grid function.
       a->RecoverFEMSolution(X, *b, x);
@@ -285,6 +288,7 @@ int main(int argc, char *argv[])
 
       //===========Raffinement du maillage=================
       refiner.Apply(*mesh);
+
       fespace->Update();
       x.Update();
       a->Update();
@@ -298,13 +302,11 @@ int main(int argc, char *argv[])
 
       // Compute norms of error
       cout <<"Energy norm of error: "<< estimator.GetTotalError()/ener_refer << endl;
-      cout << "Error goal: "<< err_goal/100 << endl;
       cout << "Numbre of DOFS: "<< fespace->GetNDofs() << endl;
       cout << endl;
 
     }//end reffine loop
-    auto end1 = std::chrono::system_clock::now();
-    time1 = end1 - start1;
+
   
     cout<<endl;
     Vector err_exacte(fespace->GetNE());
@@ -315,8 +317,6 @@ int main(int argc, char *argv[])
     cout << "Error Global référence: "<< ener_error/ener_refer << endl;
     cout << "Numbre of DOFS: "<< fespace->GetNDofs() << endl;
     cout << endl;
-
-    cout << "Time : " << time1.count()*1000.0 << " ms" << endl;
 
     cout<<endl<<"Number of reffinement iterations: "<<it<<endl;
 
