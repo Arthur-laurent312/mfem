@@ -345,7 +345,7 @@ int main(int argc, char *argv[])
 
     //===========Raffinement du maillage=================
     if (myid == 0) {cout<<"Refine ... "<<flush; }
-//    refiner.Apply(*pmesh);
+    refiner.Apply(*pmesh);
 
     if (myid == 0) {cout<<"Update ... "<<endl<<endl; }
     PROFILER_END(); PROFILER_START(3_4_update);
