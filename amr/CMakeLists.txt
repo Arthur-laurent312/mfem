@@ -1,7 +1,4 @@
 list(APPEND ALL_EXE_SRCS
-	ex2_boucle.cpp
-	ex2_boucle_amr.cpp
-	compare_boucle.cpp
 	troueAMR.cpp
 	troueAMR_tps.cpp
 	troueAMR_p.cpp
